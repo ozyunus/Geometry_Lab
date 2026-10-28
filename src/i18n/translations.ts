@@ -1,0 +1,337 @@
+export const translations = {
+  tr: {
+    appTitle: 'PatternLab',
+    tagline: 'Keşfet. Anla. Üret.',
+    heroSubtitle: 'Geometrinin gizli düzenini keşfedin, elinizle çizin, arkasındaki matematiği anlayın ve kendi eserlerinizi üretin.',
+    
+    // Navigation
+    navLearn: 'Öğren',
+    navCreate: 'Üret',
+    navExplore: 'Keşfet',
+    navAbout: 'Hakkında',
+    startLearning: 'Öğrenmeye Başla',
+    openStudio: 'Atölyeyi Aç',
+    exploreWorld: 'Dünya Desenleri',
+    
+    // Hero & Paths
+    pathLearnTitle: 'Geometriyi Öğren',
+    pathLearnDesc: 'Pergel ve cetvel mantığıyla sıfırdan çemberler, çiçekler ve yıldızlar inşa edin.',
+    pathCreateTitle: 'Desen Üret',
+    pathCreateDesc: 'Serbest çizim tuvalinde çokgenler, çemberler ve simetrilerle kendi deseninizi oluşturun.',
+    pathExploreTitle: 'Dünya Sanatını Keşfet',
+    pathExploreDesc: 'Selçuklu yıldızlarından Endülüs çinilerine, Japon kumikosuna kadar tarihi desenleri katman katman çözün.',
+    pathUnderstandTitle: 'Derin Matematik',
+    pathUnderstandDesc: 'Açıların, kesişim noktalarının ve dönüşümlerin arkasındaki zarif matematiği keşfedin.',
+    
+    // Tabs in Lessons
+    tabDoIt: 'Uygula',
+    tabWhyItWorks: 'Neden Böyle?',
+    tabMathDetails: 'Matematik Detayı',
+    
+    // Tools
+    toolSelect: 'Seç / Taşı',
+    toolPoint: 'Nokta Ekle',
+    toolSegment: 'Doğru Parçası',
+    toolCircle: 'Çember',
+    toolPolygon: 'Düzgün Çokgen',
+    toolEraser: 'Silgi',
+    undo: 'Geri Al',
+    undoLast: 'Son Çizgiyi Geri Al',
+    nextStep: 'Sonraki Adım',
+    prevStep: 'Önceki Adım',
+    step: 'Adım',
+    lessonComplete: 'Ders Tamamlandı!',
+    keepExploring: 'Keşfe Devam Et',
+    targetSnapFeedback: 'Kusursuz! Hedefe tam oturdu.',
+    ghostTargetLabel: 'Hedef Kılavuz',
+    stepBadge: 'Öğrenme Adımı',
+    learningJourney: '8 Adımlı Geometri Yolculuğu',
+    snapHint: 'Hedefe yaklaştığınızda mıknatıs gibi oturacaktır.',
+    redo: 'Yinele',
+    reset: 'Sıfırla',
+    clearCanvas: 'Tuvali Temizle',
+    save: 'Kaydet',
+    exportSvg: 'SVG İndir',
+    exportPng: 'PNG İndir',
+    rotateAngle: 'Döndürme Açısı',
+    decodePattern: 'Deseni Çöz',
+    zoomIn: 'Yakınlaştır (+)',
+    zoomOut: 'Uzaklaştır (-)',
+    fitAll: 'Tümünü Sığdır',
+    perfectCelebrationTitle: '%100 Kusursuz Geometri Doğrulandı!',
+    perfectCelebrationDesc: 'Tebrikler! 6 yapraklı çiçeği pergel mantığıyla tam 60° açılar ve eşit yarıçapla kusursuz inşa ettiniz.',
+    replayCelebration: 'Efekti Tekrar Oynat',
+    
+    // Studio options
+    strokeColor: 'Çizgi Rengi',
+    strokeWidth: 'Çizgi Kalınlığı',
+    lineStyle: 'Çizgi Stili',
+    styleSolid: 'Düz',
+    styleDashed: 'Kesikli (Kılavuz)',
+    gridToggle: 'Izgara',
+    snapGrid: 'Izgaraya Yapış',
+    snapPoints: 'Noktalara Yapış',
+    polygonSides: 'Kenar Sayısı',
+    
+    // Rosette Lesson
+    rosetteTitle: 'Altı Yapraklı Çiçek (Rosette)',
+    rosetteDesc: 'Pergel açıklığını değiştirmeden yalnızca bir çember ve eşit yarıçaplı çevre çemberleriyle kusursuz bir altıgen çiçek inşa edin.',
+    step1Title: 'Adım 1: Merkez Çemberi Belirle',
+    step1Desc: 'Tuvalin ortasına tıklayıp sürükleyerek referans bir merkez çember çizin.',
+    step2Title: 'Adım 2: İlk Çevre Çemberi',
+    step2Desc: 'Pergelinizin ucunu merkez çemberin tam çevresi üzerine batırın ve aynı yarıçapla ilk çevre çemberini çizin.',
+    step3Title: 'Adım 3: Çevreyi Dolaş ve Çiçeği Tamamla',
+    step3Desc: 'Her yeni çemberin merkezini, bir önceki çember ile merkez çemberin kesiştiği noktaya koyun. 6 çember tamamlandığında pergeliniz başlangıç noktasına kusursuzca geri dönecektir.',
+    
+    rosetteWhy: 'Bir çemberin içine yerleştirilen düzgün altıgenin her bir kenar uzunluğu, o çemberin yarıçapına (R) tam olarak eşittir. Bu yüzden pergel açıklığınızı hiç değiştirmeden çemberin çevresinde adım attığınızda, tam 6 adımda başlangıç noktanıza dönersiniz. Hiçbir ölçü aleti kullanmadan kusursuz 60° eşit açılar elde edersiniz.',
+    rosetteMath: 'Tam bir dönüş 360 derecedir. Çember eşit 6 parçaya bölündüğünde her yayın merkez açısı 360° / 6 = 60° olur. Merkez ile iki komşu kesişim noktasının oluşturduğu üçgen, açıları 60°-60°-60° olan bir eşkenar üçgendir. Eşkenar üçgenin tüm kenarları eşit olduğundan, çember üzerindeki komşu iki nokta arasındaki mesafe doğrudan yarıçap R\'ye eşittir.',
+    
+    // Rotation Lesson
+    rotationTitle: 'Döndürme ve Sekiz Köşeli Yıldız',
+    rotationDesc: 'Aynı merkezli iki karenin birbirine göre dönüş açısını kaydırıcıyla değiştirin ve ortaya çıkan köşeleri gözlemleyin.',
+    angleSliderLabel: 'Döndürme Açısı',
+    deg0Insight: '0° Açıda: İki kare tam olarak üst üste biner. Sadece 4 köşe ve 4 kenar görünür.',
+    deg45Insight: '45° Açıda: Kusursuz 8 köşeli yıldız silüeti ortaya çıkar! 360° / 8 = 45° olduğundan sekiz köşe eşit aralıklarla çevreye yayılır. Selçuklu ve İslam geometrik sanatının en temel motiflerinden biridir.',
+    deg90Insight: '90° Açıda: Kare 90 derecelik dönme simetrisine sahip olduğu için yine başlangıç karesiyle birebir çakışır (çeyrek dönüş).',
+    rotationWhy: 'Kare, merkezine göre 90° dönme simetrisine sahiptir. İkinci bir kareyi bu açının tam yarısı olan 45° döndürdüğümüzde, iki karenin köşeleri birbirini ortalar ve çember etrafında her 45 derecede bir (toplam 8 adet) ışınsal köşe oluşturur.',
+    rotationMath: 'Düzlemde (x, y) noktasının orijin etrafında θ açısıyla döndürülmesi: x\' = x cos(θ) - y sin(θ), y\' = x sin(θ) + y cos(θ). θ = 45° için cos(45°) = sin(45°) = √2 / 2 ≈ 0.7071 olur. İki karenin kenarlarının kesişim noktaları, yıldızın iç boğum noktalarını oluşturur.',
+    
+    // Pattern Decoder
+    decoderTitle: 'Deseni Çöz: Selçuklu Sekiz Köşeli Yıldızı',
+    decoderDesc: 'Karmaşık bir desene baktığınızda onu oluşturan gizli geometrik iskeleti görebiliyor musunuz? Aşağıdaki katmanları açıp kapatarak deseni parçalarına ayırın.',
+    layerBaseSquare: 'Taban Karesi',
+    layerRotatedSquare: '45° Döndürülmüş Kare',
+    layerSymmetryAxes: 'Simetri Eksenleri',
+    layerGuideCircles: 'Kılavuz Çemberler',
+    layerStarFill: 'Yıldız Silüeti Dolgusu',
+    decoderExplanation: 'Gördüğünüz gibi, karmaşık görünen bu 8 köşeli motif aslında sadece iki özdeş karenin 45 derecelik açıyla kesişmesinden doğmaktadır. Geometri ustaları yüzyıllar boyunca pergelle çizdikleri bir çemberin içine bu iki kareyi yerleştirerek sarayların ve camilerin taç kapılarını süslemişlerdir.',
+    tryInStudio: 'Bu Motifi Atölyede Çiz',
+    
+    // Explore gallery
+    galleryTitle: 'Dünyadan Geometrik Desenler',
+    gallerySubtitle: 'Farklı kültürlerin ortak dili olan geometrinin dünya mimarisi ve sanatındaki izleri.',
+    filterAll: 'Tümü',
+    filterIslamic: 'İslam & Selçuklu Sanatı',
+    filterAsian: 'Uzak Doğu & Kumiko',
+    filterModern: 'Modern Mozaik & Eşleme',
+    attributionLabel: 'Esinlenme Kaynağı & Geometrik Analiz',
+    
+    // Status & Feedback
+    validationSuccess: 'Tebrikler! Çiçeğin geometrisi kusursuz doğrulandı.',
+    validationInProgress: 'Çizim devam ediyor...',
+    scoreLabel: 'Doğruluk',
+    criteriaMet: 'Tamamlanan Kriterler',
+    criteriaMissing: 'Eksik Kriterler',
+    hintsTitle: 'İpuçları',
+    autoCompleteRosette: 'Örnek Tam Çiçeği Göster',
+    transferToStudio: 'Atölyeye Aktar ve Renklendir',
+    
+    // About
+    aboutTitle: 'PatternLab Hakkında',
+    aboutMissionTitle: 'Misyonumuz: Yap → Fark Et → Anla → Üret',
+    aboutMissionDesc: 'PatternLab, geometrinin ezbere formüllerden ibaret olmadığını, binlerce yıldır doğayı ve insan sanatını şekillendiren evrensel bir görsel dil olduğunu göstermek için tasarlandı.',
+    aboutPrivacyTitle: 'Gizlilik ve Güvenlik',
+    aboutPrivacyDesc: 'PatternLab tamamen tarayıcınızda yerel (local) çalışır. Hiçbir kişisel veri, çizim veya çerez sunuculara gönderilmez. Kaydettiğiniz çalışmalar sadece kendi cihazınızın tarayıcı belleğinde (localStorage) tutulur.',
+    aboutAttributionTitle: 'Kültürel Atıf ve Saygı',
+    aboutAttributionDesc: 'Uygulamada yer alan Selçuklu, Osmanlı, İran girih, Mağrip zellige, Endülüs motifleri ve Japon ahşap işçiliği (Kumiko) gibi gelenekler, ait oldukları zengin tarihsel bağlam gözetilerek incelenmiştir.',
+    
+    // Compass Locking (Step 2)
+    compassLocked: 'Pergel Açıklığı Kilitlendi (R = 85px)',
+    lockCompass: 'Pergel Açıklığını Kilitle (🔒)',
+    unlockCompass: 'Kilidi Aç',
+    compassAperture: 'Pergel Açıklığı',
+    step2LockHint: 'Önce C₁ üzerinde pergel açıklığını 85px olarak sabitleyip kilitleyin, ardından C₂ merkezine gidip aynı yarıçapla çizin.',
+    drawWithLockedCompass: 'Kilitli Pergelle C₂\'yi Çiz',
+    step2MeasureAperture: '1. Pergeli Açarak C₁\'i Ölç',
+    step2MoveToC2: '2. Pergeli C₂ Merkezine Taşı',
+    step2DrawCircle: '3. Kilitli Pergelle Eş Çemberi Çiz',
+    
+    // Step 5 & 7 Drawing
+    step5GuideKeep: 'Kılavuzlar ve Kesişim Doğruları',
+    step5DrawHint: 'Kılavuz çizgileri üzerindeki V0-V5 tepe noktalarına dokunarak veya sürükleyerek eşkenar üçgenlerin kenarlarını birleştirin.',
+    step7ConnectPoints: 'Köşeleri Birbirine Bağla',
+    step7DrawTip: 'Köşelere tıklayarak veya aralarında çizgi çizerek 8 köşeli Selçuklu yıldızını tamamlayın.',
+    step7TipSelected: 'Seçilen Köşeler',
+    
+    // Pattern Verification (Step 8 & Studio)
+    verifyPattern: 'Geometrik Doğruluğu Değerlendir',
+    accuracyInspector: 'Geometrik Doğruluk Denetleyicisi',
+    concentricRings: 'Merkez ve Yarıçap Eşitliği',
+    radialSymmetry: 'Radyal Dönme Simetrisi',
+    geometricPrecision: 'Geometrik Hassasiyet',
+    patternPassed: 'Kusursuz Geometri! Tüm kriterler başarıyla doğrulandı.',
+    patternIncomplete: 'Doğrulama: Hedef desen henüz tamamlanmadı.',
+    inspectPattern: 'Geometrik Analiz & Doğruluk',
+    howDoIKnowTitle: 'Doğru Yaptığımı Nasıl Anlarım?',
+    howDoIKnowExplanation: 'Euclid aksiyomları ve pergel geometrisiyle doğruluk matematiksel olarak kanıtlanır: Bütün çevre çemberlerinin merkezleri ana çemberin üzerindedir ve yarıçapları birbirine tam eşittir (sapma 0.0px). Kesişim açıları kusursuz 60° veya 45° simetrisi üretir.',
+  },
+  
+  en: {
+    appTitle: 'PatternLab',
+    tagline: 'Explore. Understand. Create.',
+    heroSubtitle: 'Discover the hidden order of geometry, construct hands-on, understand the underlying mathematics, and create your own original art.',
+    
+    // Navigation
+    navLearn: 'Learn',
+    navCreate: 'Create',
+    navExplore: 'Explore',
+    navAbout: 'About',
+    startLearning: 'Start Learning',
+    openStudio: 'Open Studio',
+    exploreWorld: 'World Patterns',
+    
+    // Hero & Paths
+    pathLearnTitle: 'Learn Geometry',
+    pathLearnDesc: 'Construct circles, rosettes, and stars from first principles with compass and straightedge logic.',
+    pathCreateTitle: 'Create Patterns',
+    pathCreateDesc: 'Design original geometric artwork on a freeform canvas using polygons, circles, and symmetries.',
+    pathExploreTitle: 'Explore World Art',
+    pathExploreDesc: 'Decode historical patterns layer-by-layer: from Seljuk stars and Andalusian tiles to Japanese kumiko.',
+    pathUnderstandTitle: 'Deep Mathematics',
+    pathUnderstandDesc: 'Uncover the elegant mathematics of angles, intersections, and rotational transformations.',
+    
+    // Tabs in Lessons
+    tabDoIt: 'Do It',
+    tabWhyItWorks: 'Why It Works',
+    tabMathDetails: 'Math Details',
+    
+    // Tools
+    toolSelect: 'Select / Move',
+    toolPoint: 'Add Point',
+    toolSegment: 'Line Segment',
+    toolCircle: 'Circle',
+    toolPolygon: 'Regular Polygon',
+    toolEraser: 'Eraser',
+    undo: 'Undo',
+    undoLast: 'Undo Last Line',
+    nextStep: 'Next Step',
+    prevStep: 'Previous Step',
+    step: 'Step',
+    lessonComplete: 'Lesson Completed!',
+    keepExploring: 'Keep Exploring',
+    targetSnapFeedback: 'Perfect! Snapped right on target.',
+    ghostTargetLabel: 'Target Guide',
+    stepBadge: 'Learning Step',
+    learningJourney: '8-Step Geometry Journey',
+    snapHint: 'Will snap like a magnet when close to target.',
+    redo: 'Redo',
+    reset: 'Reset',
+    clearCanvas: 'Clear Canvas',
+    save: 'Save',
+    exportSvg: 'Export SVG',
+    exportPng: 'Export PNG',
+    rotateAngle: 'Rotation Angle',
+    decodePattern: 'Decode the Pattern',
+    zoomIn: 'Zoom In (+)',
+    zoomOut: 'Zoom Out (-)',
+    fitAll: 'Fit View',
+    perfectCelebrationTitle: '100% Geometric Perfection Verified!',
+    perfectCelebrationDesc: 'Congratulations! You constructed the regular 6-petal rosette with exact 60° intervals and equal radius.',
+    replayCelebration: 'Replay Effect',
+    
+    // Studio options
+    strokeColor: 'Stroke Color',
+    strokeWidth: 'Stroke Width',
+    lineStyle: 'Line Style',
+    styleSolid: 'Solid',
+    styleDashed: 'Dashed (Guide)',
+    gridToggle: 'Grid',
+    snapGrid: 'Snap to Grid',
+    snapPoints: 'Snap to Points',
+    polygonSides: 'Polygon Sides',
+    
+    // Rosette Lesson
+    rosetteTitle: 'Six-Petal Rosette',
+    rosetteDesc: 'Construct a regular hexagonal flower using only a compass with a fixed opening, building a center circle and equal surrounding circles.',
+    step1Title: 'Step 1: Set Center Circle',
+    step1Desc: 'Click and drag on the center of the canvas to establish your reference circle.',
+    step2Title: 'Step 2: First Surrounding Circle',
+    step2Desc: 'Place the needle of your compass on the perimeter of the center circle and draw your first surrounding circle with the same radius.',
+    step3Title: 'Step 3: Walk the Perimeter',
+    step3Desc: 'Place each new circle center at the intersection of the previous circle and the center circle. After 6 steps, your compass returns exactly to the starting point.',
+    
+    rosetteWhy: 'A regular hexagon inscribed in a circle has edges exactly equal to the circle\'s radius (R). Therefore, by walking around the perimeter with an unchanged compass opening, you return precisely to your starting point in exactly 6 steps, obtaining perfect 60° angles without measuring tools.',
+    rosetteMath: 'A full turn is 360°. Dividing a circle into 6 equal parts gives central angles of 360° / 6 = 60°. The triangle formed by the center and two adjacent intersection points is an equilateral triangle with angles 60°-60°-60°. Because all sides are equal, the distance between adjacent circle centers on the perimeter is exactly R.',
+    
+    // Rotation Lesson
+    rotationTitle: 'Rotation & Eight-Point Star',
+    rotationDesc: 'Adjust the rotation slider of two concentric identical squares and observe how the corners interleave to create a star.',
+    angleSliderLabel: 'Rotation Angle',
+    deg0Insight: 'At 0°: The two squares coincide completely. Only 4 corners and 4 edges are visible.',
+    deg45Insight: 'At 45°: A perfect eight-point star silhouette emerges! Because 360° / 8 = 45°, eight corners are evenly spaced around the perimeter. This is a foundational motif in Seljuk and Islamic geometric art.',
+    deg90Insight: 'At 90°: Due to the 4-fold 90° rotational symmetry of a square, the rotated square coincides once again with the original shape.',
+    rotationWhy: 'A square possesses 90° rotational symmetry. By rotating a second congruent square by half this fundamental angle (45°), the corners of both squares interleave evenly, radiating outward in eight evenly spaced directions.',
+    rotationMath: 'Rotating a point (x, y) around the origin by angle θ: x\' = x cos(θ) - y sin(θ), y\' = x sin(θ) + y cos(θ). For θ = 45°, cos(45°) = sin(45°) = √2 / 2 ≈ 0.7071. The intersecting edges of both squares create the inner concave vertices of the star silhouette.',
+    
+    // Pattern Decoder
+    decoderTitle: 'Decode the Pattern: Seljuk Eight-Point Star',
+    decoderDesc: 'When looking at an intricate geometric ornament, can you spot its hidden underlying armature? Toggle the layers below to deconstruct the pattern.',
+    layerBaseSquare: 'Base Square',
+    layerRotatedSquare: '45° Rotated Square',
+    layerSymmetryAxes: 'Symmetry Axes',
+    layerGuideCircles: 'Guide Circles',
+    layerStarFill: 'Star Silhouette Fill',
+    decoderExplanation: 'As you can see, this elaborate 8-point motif is generated by the intersection of just two identical squares rotated 45 degrees relative to each other. For centuries, master geometers set these squares inside a compass-drawn circle to adorn monumental portals and sanctuaries.',
+    tryInStudio: 'Reconstruct in Studio',
+    
+    // Explore gallery
+    galleryTitle: 'Geometric Patterns Around the World',
+    gallerySubtitle: 'Tracing geometry as a universal language across global architecture, craft, and art traditions.',
+    filterAll: 'All',
+    filterIslamic: 'Islamic & Seljuk Art',
+    filterAsian: 'East Asian Kumiko',
+    filterModern: 'Modern Tessellations',
+    attributionLabel: 'Inspiration & Geometric Analysis',
+    
+    // Status & Feedback
+    validationSuccess: 'Congratulations! Rosette geometry verified with mathematical precision.',
+    validationInProgress: 'Drawing in progress...',
+    scoreLabel: 'Accuracy',
+    criteriaMet: 'Criteria Met',
+    criteriaMissing: 'Missing Criteria',
+    hintsTitle: 'Hints',
+    autoCompleteRosette: 'Show Reference Rosette',
+    transferToStudio: 'Transfer to Studio & Color',
+    
+    // About
+    aboutTitle: 'About PatternLab',
+    aboutMissionTitle: 'Our Philosophy: Do → Notice → Understand → Create',
+    aboutMissionDesc: 'PatternLab demonstrates that geometry is not dry memorization of formulas, but a living visual language that has shaped nature, craft, and human civilization for millennia.',
+    aboutPrivacyTitle: 'Privacy & Offline First',
+    aboutPrivacyDesc: 'PatternLab runs 100% locally in your web browser. No telemetry, user accounts, or cookies are stored on remote servers. All your drawings and progress reside solely in your browser\'s local storage.',
+    aboutAttributionTitle: 'Cultural Attribution & Integrity',
+    aboutAttributionDesc: 'Traditions such as Anatolian Seljuk stars, Ottoman tilework, Persian girih, Moroccan zellige, Andalusian patterns, and Japanese kumiko woodwork are presented with respect for their distinct cultural and historical heritage.',
+    
+    // Compass Locking (Step 2)
+    compassLocked: 'Compass Aperture Locked (R = 85px)',
+    lockCompass: 'Lock Compass Aperture (🔒)',
+    unlockCompass: 'Unlock Compass',
+    compassAperture: 'Compass Aperture',
+    step2LockHint: 'First set and lock the compass aperture at 85px on C₁, then move to C₂ to draw the congruent circle.',
+    drawWithLockedCompass: 'Draw C₂ with Locked Compass',
+    step2MeasureAperture: '1. Open Compass to Measure C₁',
+    step2MoveToC2: '2. Move Compass to C₂',
+    step2DrawCircle: '3. Draw Congruent Circle with Compass',
+    
+    // Step 5 & 7 Drawing
+    step5GuideKeep: 'Guides & Intersection Chords',
+    step5DrawHint: 'Tap or drag between vertices V0-V5 along the persistent guide lines to connect the hexagram.',
+    step7ConnectPoints: 'Connect Star Vertices',
+    step7DrawTip: 'Tap vertices or draw lines between corners to complete the 8-pointed Seljuk star.',
+    step7TipSelected: 'Connected Vertices',
+    
+    // Pattern Verification (Step 8 & Studio)
+    verifyPattern: 'Evaluate Geometric Accuracy',
+    accuracyInspector: 'Geometric Accuracy Inspector',
+    concentricRings: 'Concentric & Radius Congruence',
+    radialSymmetry: 'Rotational Symmetry',
+    geometricPrecision: 'Geometric Precision',
+    patternPassed: 'Flawless Geometry! All criteria verified successfully.',
+    patternIncomplete: 'Verification: Target pattern not yet completed.',
+    inspectPattern: 'Geometric Symmetry Inspector',
+    howDoIKnowTitle: 'How Do I Know It Is Correct?',
+    howDoIKnowExplanation: 'Proven by Euclidean compass-and-straightedge geometry: All satellite circle centers lie on the primary circle, and all radii are strictly congruent (0.0px deviation). All intersection nodes form exact 60° or 45° angles.',
+  }
+};
+
+export type TranslationKey = keyof typeof translations.en;

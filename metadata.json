@@ -1,0 +1,6 @@
+{
+  "name": "PatternLab - Geometric Pattern Studio",
+  "description": "Bilingual interactive geometry and geometric pattern studio. Explore. Understand. Create. / Keşfet. Anla. Üret.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

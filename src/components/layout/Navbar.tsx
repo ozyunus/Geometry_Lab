@@ -7,10 +7,13 @@ export type ActiveView = 'home' | 'learn' | 'create' | 'explore' | 'about' | 'ro
 interface NavbarProps {
   activeView: ActiveView;
   onNavigate: (view: ActiveView) => void;
+  onOpenKids: () => void;
+  isKidsMode: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, onOpenKids, isKidsMode }) => {
   const { t, lang, setLang } = useI18n();
+  const isTr = lang === 'tr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -93,8 +96,21 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate }) => {
           })}
         </nav>
 
-        {/* Right Actions: Language Switcher & Mobile Menu Toggle */}
+        {/* Right Actions: Kids Room Button & Language Switcher & Mobile Menu Toggle */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Flowery Kids Room Button */}
+          <button
+            type="button"
+            onClick={onOpenKids}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-teal-700 via-emerald-700 to-amber-700 text-white hover:opacity-95 text-xs font-extrabold shadow-sm transition transform hover:scale-105 cursor-pointer ${
+              isKidsMode ? 'ring-3 ring-offset-2 ring-teal-700 scale-105' : ''
+            }`}
+            title="Minik Geometristler İçin Eğlenceli Çocuk Odası"
+          >
+            <span className="text-sm">🌿</span>
+            <span className="hidden sm:inline">{isTr ? 'Çocuk Odası' : 'Kids Room'}</span>
+          </button>
+
           {/* TR / EN Switcher */}
           <button
             type="button"

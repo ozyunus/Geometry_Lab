@@ -59,6 +59,21 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
     initialTemplateGuide || 'rosette'
   );
   const [templateOpacity, setTemplateOpacity] = useState<number>(0.2);
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  const [backgroundOpacity, setBackgroundOpacity] = useState<number>(0.35);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (typeof event.target?.result === 'string') {
+        setBackgroundImage(event.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Geometric Accuracy Inspector Modal State
   const [showInspectorModal, setShowInspectorModal] = useState<boolean>(false);
@@ -607,6 +622,20 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
           >
+            {/* Custom Uploaded Background Photo Tracing Template */}
+            {backgroundImage && (
+              <image
+                href={backgroundImage}
+                x="0"
+                y="0"
+                width="600"
+                height="600"
+                preserveAspectRatio="none"
+                opacity={backgroundOpacity}
+                className="pointer-events-none"
+              />
+            )}
+
             {/* Origin Grid Guides */}
             <g opacity="0.2">
               <line x1="0" y1="300" x2="600" y2="300" stroke="#60757C" strokeWidth="1" strokeDasharray="4 4" />
@@ -813,6 +842,52 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
                 {isDashed ? t('styleDashed') : t('styleSolid')}
               </button>
             </div>
+          </div>
+
+          {/* Photo Tracing / Background Image Card */}
+          <div className="bg-[#FFFDF8] border border-[#E8E5DD] rounded-2xl p-4 shadow-sm space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#60757C]">
+              {isTr ? 'Fotoğraf Şablonu / Tracing' : 'Photo Template / Tracing'}
+            </h3>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-[#087D86] text-white text-xs font-bold hover:bg-[#06656D] cursor-pointer shadow-2xs transition"
+            >
+              <span>📷 {isTr ? 'Şablon Fotoğraf Yükle' : 'Upload Template Photo'}</span>
+            </button>
+
+            {backgroundImage && (
+              <div className="space-y-2 pt-2 border-t border-[#E8E5DD]">
+                <div className="flex items-center justify-between text-xs font-medium text-[#14313F]">
+                  <span>{isTr ? 'Şeffaflık' : 'Opacity'}</span>
+                  <span className="font-mono">{Math.round(backgroundOpacity * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="1"
+                  step="0.05"
+                  value={backgroundOpacity}
+                  onChange={e => setBackgroundOpacity(parseFloat(e.target.value))}
+                  className="w-full accent-[#087D86]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setBackgroundImage(null)}
+                  className="w-full py-1 text-xs text-[#C23B22] font-bold hover:bg-[#C23B22]/10 rounded-lg transition cursor-pointer"
+                >
+                  {isTr ? 'Şablonu Kaldır' : 'Remove Template'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Polygon Sides (if polygon tool is active) */}

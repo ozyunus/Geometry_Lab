@@ -11,12 +11,14 @@ import { ExploreGallery } from './components/explore/ExploreGallery';
 import { AboutView } from './components/about/AboutView';
 import { GeoScene } from './types/geometry';
 import { ShieldCheck } from 'lucide-react';
+import { KidsAdventureView } from './components/kids/KidsAdventureView';
 
 function AppContent() {
   const { t, lang } = useI18n();
   const isTr = lang === 'tr';
 
   const [activeView, setActiveView] = useState<ActiveView>('home');
+  const [isKidsMode, setIsKidsMode] = useState<boolean>(false);
   const [selectedLessonId, setSelectedLessonId] = useState<string>('lesson-1');
   const [transferredScene, setTransferredScene] = useState<GeoScene | null>(null);
   const [transferredTemplateGuide, setTransferredTemplateGuide] = useState<'none' | 'rosette' | 'seljuk8'>('rosette');
@@ -46,11 +48,29 @@ function AppContent() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F5EE] text-[#14313F]">
       {/* Top sticky navbar */}
-      <Navbar activeView={activeView} onNavigate={handleNavigate} />
+      <Navbar
+        activeView={activeView}
+        onNavigate={(v) => {
+          setIsKidsMode(false);
+          handleNavigate(v);
+        }}
+        onOpenKids={() => setIsKidsMode(true)}
+        isKidsMode={isKidsMode}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 py-4 sm:py-6">
-        {activeView === 'home' && (
+        {isKidsMode ? (
+          <KidsAdventureView
+            onReturn={() => setIsKidsMode(false)}
+            onNavigate={(v) => {
+              setIsKidsMode(false);
+              handleNavigate(v);
+            }}
+          />
+        ) : (
+          <>
+            {activeView === 'home' && (
           <HomeView
             onNavigate={(view) => {
               if (view === 'rosette') {
@@ -112,6 +132,8 @@ function AppContent() {
         )}
 
         {activeView === 'about' && <AboutView />}
+          </>
+        )}
       </main>
 
       {/* Global Footer */}

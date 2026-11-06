@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { GeoPoint, GeoSegment, GeoCircle, GeoPolygon, GeoScene, ToolType } from '../../types/geometry';
 import { distance, getPolygonVertices, verticesToSvgPoints, inspectGeometryScene, GeometricInspectionResult } from '../../geometry/engine';
+import analytics from '../../services/analytics';
 import {
   MousePointer2,
   Dot,
@@ -168,6 +169,7 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
 
     if (activeTool === 'point') {
       pushHistory();
+      analytics.trackDrawingStarted({ tool: 'point' });
       const newPoint: GeoPoint = {
         id: `p-${Date.now()}`,
         x: coords.x,
@@ -181,6 +183,7 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
       return;
     }
 
+    analytics.trackDrawingStarted({ tool: activeTool });
     setIsInteracting(true);
     setDragStart({
       x: coords.x,
@@ -291,6 +294,8 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
 
   const handleUndo = () => {
     if (history.length === 0) return;
+    const count = scene.circles.length + scene.segments.length + scene.polygons.length;
+    analytics.trackDrawingUndo({ element_count: count });
     const prev = history[history.length - 1];
     setRedoStack(r => [...r, JSON.parse(JSON.stringify(scene))]);
     setHistory(history.slice(0, -1));
@@ -306,6 +311,8 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
   };
 
   const handleReset = () => {
+    const count = scene.circles.length + scene.segments.length + scene.polygons.length;
+    analytics.trackDrawingReset({ element_count: count });
     pushHistory();
     setScene({
       points: [{ id: 'p-origin', x: 300, y: 300, label: 'O', isAnchor: true }],
@@ -317,6 +324,8 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
 
   // Export clean standalone SVG
   const handleExportSvg = () => {
+    const count = scene.circles.length + scene.segments.length + scene.polygons.length;
+    analytics.trackDrawingCompleted({ tool: 'export_svg', element_count: count });
     const pointMap = new Map<string, GeoPoint>();
     scene.points.forEach(p => pointMap.set(p.id, p));
 
@@ -617,7 +626,7 @@ export const GeometryStudio: React.FC<GeometryStudioProps> = ({ initialScene, in
           <svg
             ref={svgRef}
             viewBox="0 0 600 600"
-            className="w-full max-w-[560px] aspect-square relative z-10 cursor-crosshair geometry-canvas-touch border border-[#E8E5DD]/70 rounded-xl bg-white shadow-inner"
+            className="w-full max-w-[560px] aspect-square relative z-10 cursor-crosshair geometry-canvas-touch border border-[#E8E5DD]/70 rounded-xl bg-white shadow-inner ph-no-capture"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}

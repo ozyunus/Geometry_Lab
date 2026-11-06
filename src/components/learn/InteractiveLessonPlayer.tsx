@@ -4,6 +4,7 @@ import { LESSONS } from '../../content/learningPaths';
 import { GeoScene, GeoPoint } from '../../types/geometry';
 import { distance, inspectGeometryScene, GeometricInspectionResult } from '../../geometry/engine';
 import confetti from 'canvas-confetti';
+import analytics from '../../services/analytics';
 import {
   Compass,
   RotateCcw,
@@ -45,6 +46,22 @@ export const InteractiveLessonPlayer: React.FC<InteractiveLessonPlayerProps> = (
     const idx = LESSONS.findIndex(l => l.id === initialLessonId);
     return idx >= 0 ? idx : 0;
   });
+
+  const lessonStartTimeRef = useRef<number>(Date.now());
+
+  // Track adult lesson start
+  useEffect(() => {
+    const lesson = LESSONS[currentStepIndex];
+    if (lesson) {
+      analytics.trackLessonStarted({
+        lesson_id: lesson.id,
+        lesson_number: currentStepIndex + 1,
+        step_number: currentStepIndex + 1,
+        total_steps: LESSONS.length,
+      });
+      lessonStartTimeRef.current = Date.now();
+    }
+  }, [currentStepIndex]);
 
   const [activeTab, setActiveTab] = useState<'do' | 'why' | 'math'>('do');
   const [completedSteps, setCompletedSteps] = useState<number[]>(() => {
@@ -147,6 +164,31 @@ export const InteractiveLessonPlayer: React.FC<InteractiveLessonPlayerProps> = (
 
   // Mark step complete and trigger confetti
   const markStepComplete = useCallback((stepIdx: number) => {
+    const duration = Math.max(1, Math.round((Date.now() - lessonStartTimeRef.current) / 1000));
+    const lesson = LESSONS[stepIdx];
+
+    if (lesson) {
+      analytics.trackStepCompleted({
+        lesson_id: lesson.id,
+        lesson_number: stepIdx + 1,
+        step_number: stepIdx + 1,
+        total_steps: LESSONS.length,
+        duration_seconds: duration,
+        completion_percentage: Math.round(((stepIdx + 1) / LESSONS.length) * 100),
+      });
+
+      if (stepIdx === LESSONS.length - 1) {
+        analytics.trackLessonCompleted({
+          lesson_id: 'adults-guided-curriculum',
+          lesson_number: LESSONS.length,
+          step_number: LESSONS.length,
+          total_steps: LESSONS.length,
+          duration_seconds: duration,
+          completion_percentage: 100,
+        });
+      }
+    }
+
     setCompletedSteps(prev => {
       const updated = Array.from(new Set([...prev, stepIdx]));
       try {
@@ -859,7 +901,7 @@ export const InteractiveLessonPlayer: React.FC<InteractiveLessonPlayerProps> = (
             <svg
               ref={svgRef}
               viewBox={viewBoxStr}
-              className="w-full max-w-[500px] aspect-square relative z-10 cursor-crosshair geometry-canvas-touch border border-[#E8E5DD]/70 rounded-xl bg-white shadow-inner transition-transform duration-200"
+              className="w-full max-w-[500px] aspect-square relative z-10 cursor-crosshair geometry-canvas-touch border border-[#E8E5DD]/70 rounded-xl bg-white shadow-inner transition-transform duration-200 ph-no-capture"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -2329,7 +2371,15 @@ export const InteractiveLessonPlayer: React.FC<InteractiveLessonPlayerProps> = (
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('why')}
+                onClick={() => {
+                  setActiveTab('why');
+                  analytics.trackHintRequested({
+                    lesson_id: currentLesson.id,
+                    lesson_number: currentStepIndex + 1,
+                    step_number: currentStepIndex + 1,
+                    total_steps: LESSONS.length,
+                  });
+                }}
                 className={`flex items-center gap-1.5 pb-2 px-2 text-xs md:text-sm font-bold border-b-2 transition cursor-pointer ${
                   activeTab === 'why'
                     ? 'border-[#087D86] text-[#087D86]'
@@ -2341,7 +2391,15 @@ export const InteractiveLessonPlayer: React.FC<InteractiveLessonPlayerProps> = (
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('math')}
+                onClick={() => {
+                  setActiveTab('math');
+                  analytics.trackHintRequested({
+                    lesson_id: currentLesson.id,
+                    lesson_number: currentStepIndex + 1,
+                    step_number: currentStepIndex + 1,
+                    total_steps: LESSONS.length,
+                  });
+                }}
                 className={`flex items-center gap-1.5 pb-2 px-2 text-xs md:text-sm font-bold border-b-2 transition cursor-pointer ${
                   activeTab === 'math'
                     ? 'border-[#087D86] text-[#087D86]'

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { I18nProvider, useI18n } from './i18n/I18nContext';
 import { Navbar, ActiveView } from './components/layout/Navbar';
 import { HomeView } from './components/home/HomeView';
@@ -10,8 +10,14 @@ import { GeometryStudio } from './components/studio/GeometryStudio';
 import { ExploreGallery } from './components/explore/ExploreGallery';
 import { AboutView } from './components/about/AboutView';
 import { GeoScene } from './types/geometry';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, MessageSquarePlus, Sliders } from 'lucide-react';
 import { KidsAdventureView } from './components/kids/KidsAdventureView';
+import analytics from './services/analytics';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { AnalyticsConsentBanner } from './components/common/AnalyticsConsentBanner';
+import { FeedbackModal } from './components/common/FeedbackModal';
+import { ExitConfirmModal } from './components/kids/ExitConfirmModal';
+import kidsStorage from './services/kidsStorage';
 
 function AppContent() {
   const { t, lang } = useI18n();
@@ -22,9 +28,55 @@ function AppContent() {
   const [selectedLessonId, setSelectedLessonId] = useState<string>('lesson-1');
   const [transferredScene, setTransferredScene] = useState<GeoScene | null>(null);
   const [transferredTemplateGuide, setTransferredTemplateGuide] = useState<'none' | 'rosette' | 'seljuk8'>('rosette');
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
+  const [pendingNavView, setPendingNavView] = useState<ActiveView | null>(null);
+  const [isNavExitModalOpen, setIsNavExitModalOpen] = useState<boolean>(false);
+
+  // Initialize analytics on mount
+  useEffect(() => {
+    analytics.init(lang);
+    analytics.trackAppOpened();
+  }, []);
+
+  // Sync language with analytics
+  useEffect(() => {
+    analytics.setLanguage(lang);
+  }, [lang]);
+
+  // Sync experience mode with analytics
+  useEffect(() => {
+    analytics.setExperience(isKidsMode ? 'kids' : 'adults');
+  }, [isKidsMode]);
 
   const handleNavigate = (view: ActiveView) => {
+    if (isKidsMode) {
+      setPendingNavView(view);
+      setIsNavExitModalOpen(true);
+      return;
+    }
+    setIsKidsMode(false);
+    analytics.setExperience('adults');
+    analytics.trackExperienceSelected('adults');
     setActiveView(view);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleConfirmNavExit = () => {
+    setIsNavExitModalOpen(false);
+    setIsKidsMode(false);
+    analytics.setExperience('adults');
+    analytics.trackExperienceSelected('adults');
+    if (pendingNavView) {
+      setActiveView(pendingNavView);
+      setPendingNavView(null);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenKids = () => {
+    setIsKidsMode(true);
+    analytics.setExperience('kids');
+    analytics.trackExperienceSelected('kids');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -51,89 +103,94 @@ function AppContent() {
       <Navbar
         activeView={activeView}
         onNavigate={(v) => {
-          setIsKidsMode(false);
           handleNavigate(v);
         }}
-        onOpenKids={() => setIsKidsMode(true)}
+        onOpenKids={handleOpenKids}
         isKidsMode={isKidsMode}
       />
 
-      {/* Main Content Area */}
+      {/* Main Content Area protected by ErrorBoundary */}
       <main className="flex-1 py-4 sm:py-6">
-        {isKidsMode ? (
-          <KidsAdventureView
-            onReturn={() => setIsKidsMode(false)}
-            onNavigate={(v) => {
-              setIsKidsMode(false);
-              handleNavigate(v);
-            }}
-          />
-        ) : (
-          <>
-            {activeView === 'home' && (
-          <HomeView
-            onNavigate={(view) => {
-              if (view === 'rosette') {
-                setSelectedLessonId('lesson-4');
-                setActiveView('learn');
-              } else if (view === 'rotation') {
-                setSelectedLessonId('lesson-6');
-                setActiveView('learn');
-              } else if (view === 'decoder') {
-                setActiveView('decoder');
-              } else {
-                setActiveView(view as ActiveView);
-              }
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-          />
-        )}
+        <ErrorBoundary fallbackExperience={isKidsMode ? 'kids' : 'adults'}>
+          {isKidsMode ? (
+            <KidsAdventureView
+              onReturn={() => {
+                setIsKidsMode(false);
+                analytics.setExperience('adults');
+                analytics.trackExperienceSelected('adults');
+              }}
+              onNavigate={(v) => {
+                setIsKidsMode(false);
+                handleNavigate(v);
+              }}
+            />
+          ) : (
+            <>
+              {activeView === 'home' && (
+                <HomeView
+                  onNavigate={(view) => {
+                    if (view === 'rosette') {
+                      setSelectedLessonId('lesson-4');
+                      setActiveView('learn');
+                    } else if (view === 'rotation') {
+                      setSelectedLessonId('lesson-6');
+                      setActiveView('learn');
+                    } else if (view === 'decoder') {
+                      setActiveView('decoder');
+                    } else {
+                      setActiveView(view as ActiveView);
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                />
+              )}
 
-        {/* Unified 8-Step Interactive Guided Learning Engine */}
-        {activeView === 'learn' && (
-          <InteractiveLessonPlayer
-            key={selectedLessonId}
-            initialLessonId={selectedLessonId}
-            onNavigateToStudio={handleTransferToStudio}
-          />
-        )}
+              {/* Unified 8-Step Interactive Guided Learning Engine */}
+              {activeView === 'learn' && (
+                <InteractiveLessonPlayer
+                  key={selectedLessonId}
+                  initialLessonId={selectedLessonId}
+                  onNavigateToStudio={handleTransferToStudio}
+                />
+              )}
 
-        {activeView === 'rosette' && (
-          <RosetteLesson
-            onTransferToStudio={handleTransferToStudio}
-            onNextLesson={() => {
-              setSelectedLessonId('lesson-6');
-              setActiveView('learn');
-            }}
-          />
-        )}
+              {activeView === 'rosette' && (
+                <RosetteLesson
+                  onTransferToStudio={handleTransferToStudio}
+                  onNextLesson={() => {
+                    setSelectedLessonId('lesson-6');
+                    setActiveView('learn');
+                  }}
+                />
+              )}
 
-        {activeView === 'rotation' && (
-          <RotationLesson
-            onTransferToStudio={() => setActiveView('create')}
-          />
-        )}
+              {activeView === 'rotation' && (
+                <RotationLesson
+                  onTransferToStudio={() => setActiveView('create')}
+                />
+              )}
 
-        {activeView === 'decoder' && (
-          <PatternDecoder
-            onTransferToStudio={() => setActiveView('create')}
-          />
-        )}
+              {activeView === 'decoder' && (
+                <PatternDecoder
+                  onTransferToStudio={() => setActiveView('create')}
+                />
+              )}
 
-        {activeView === 'create' && (
-          <GeometryStudio initialScene={transferredScene} initialTemplateGuide={transferredTemplateGuide} />
-        )}
+              {activeView === 'create' && (
+                <GeometryStudio initialScene={transferredScene} initialTemplateGuide={transferredTemplateGuide} />
+              )}
 
-        {activeView === 'explore' && (
-          <ExploreGallery
-            onOpenDecoder={() => setActiveView('decoder')}
-            onOpenStudio={() => setActiveView('create')}
-          />
-        )}
+              {activeView === 'explore' && (
+                <ExploreGallery
+                  onOpenDecoder={() => setActiveView('decoder')}
+                  onOpenStudio={() => setActiveView('create')}
+                />
+              )}
 
-        {activeView === 'about' && <AboutView />}
-          </>
-        )}
+              {activeView === 'about' && <AboutView />}
+            </>
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Global Footer */}
@@ -145,7 +202,17 @@ function AppContent() {
             <span>{t('tagline')}</span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Feedback Button */}
+            <button
+              type="button"
+              onClick={() => setIsFeedbackOpen(true)}
+              className="inline-flex items-center gap-1.5 hover:text-[#087D86] font-medium cursor-pointer"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5 text-[#087D86]" />
+              <span>{isKidsMode ? (isTr ? 'Ebeveyn Görüşü' : 'Parent Feedback') : (isTr ? 'Geri Bildirim' : 'Feedback')}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => handleNavigate('about')}
@@ -153,6 +220,7 @@ function AppContent() {
             >
               {t('navAbout')}
             </button>
+
             <span className="inline-flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-[#087D86]" />
               {isTr ? '100% Yerel & Güvenli' : '100% Local & Private'}
@@ -160,6 +228,27 @@ function AppContent() {
           </div>
         </div>
       </footer>
+
+      {/* Optional Feedback Dialog */}
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        contextLessonId={selectedLessonId}
+      />
+
+      {/* Navbar Exit Guard Confirmation */}
+      <ExitConfirmModal
+        isOpen={isNavExitModalOpen}
+        currentStep={kidsStorage.loadSession().step || 1}
+        onConfirmExit={handleConfirmNavExit}
+        onCancel={() => {
+          setIsNavExitModalOpen(false);
+          setPendingNavView(null);
+        }}
+      />
+
+      {/* Consent & Privacy Preferences Banner */}
+      <AnalyticsConsentBanner />
     </div>
   );
 }

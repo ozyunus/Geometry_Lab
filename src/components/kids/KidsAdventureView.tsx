@@ -1,40 +1,170 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { Sparkles, Star, ArrowRight, ArrowLeft, RefreshCcw, Smile, CheckCircle, Undo2, Award } from 'lucide-react';
+import {
+  Sparkles,
+  Star,
+  ArrowRight,
+  ArrowLeft,
+  RefreshCcw,
+  Smile,
+  CheckCircle,
+  Undo2,
+  Sliders,
+  Volume2,
+  VolumeX,
+  Music,
+  HelpCircle,
+  Award,
+} from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { ActiveView } from '../layout/Navbar';
+import analytics from '../../services/analytics';
+import soundEffects from '../../services/soundEffects';
+import kidsStorage, {
+  DrawnLine,
+  StepDrawingState,
+  ThemeMode,
+  TextSizeMode,
+} from '../../services/kidsStorage';
+import { ExitConfirmModal } from './ExitConfirmModal';
+import { KidsOnboardingTour } from './KidsOnboardingTour';
+import { ThemeStyleTweaker } from './ThemeStyleTweaker';
+import { ColorPaletteBuilder } from './ColorPaletteBuilder';
 
 interface KidsAdventureProps {
   onReturn: () => void;
   onNavigate: (view: ActiveView) => void;
 }
 
-interface DrawnLine {
-  id: string;
-  from: string;
-  to: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  color: string;
-}
-
 export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) => {
   const { lang } = useI18n();
   const isTr = lang === 'tr';
 
-  const [step, setStep] = useState(1);
-  const [stars, setStars] = useState(0);
-  const [activeColor, setActiveColor] = useState('#3A6B5C');
+  // Load persistent session on mount
+  const initialSession = kidsStorage.loadSession();
 
-  // Organic calm colors
-  const calmColors = ['#3A6B5C', '#D4A373', '#5A7184', '#8C6D9E', '#BC6C25', '#283618'];
+  const [step, setStep] = useState<number>(initialSession.step || 1);
+  const [stars, setStars] = useState<number>(initialSession.stars || 0);
+  const [activeColor, setActiveColor] = useState<string>(initialSession.activeColor || '#3A6B5C');
+  const [customColors, setCustomColors] = useState<string[]>(initialSession.customColors || []);
+  const [strokeWidth, setStrokeWidth] = useState<number>(initialSession.strokeWidth || 5);
 
-  // SVG Ref for exact 1:1 coordinate calculation
+  // Appearance & Accessibility Modes
+  const [themeMode, setThemeMode] = useState<ThemeMode>(initialSession.themeMode || 'natural');
+  const [textSizeMode, setTextSizeMode] = useState<TextSizeMode>(initialSession.textSizeMode || 'normal');
+  const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSession.sfxEnabled ?? true);
+  const [bgMusicEnabled, setBgMusicEnabled] = useState<boolean>(initialSession.bgMusicEnabled ?? false);
+
+  // Modals & Panels
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [isOnboardingTourOpen, setIsOnboardingTourOpen] = useState(!initialSession.tourCompleted);
+  const [isThemeTweakerOpen, setIsThemeTweakerOpen] = useState(false);
+
+  // Step duration timer
+  const stepStartTimeRef = useRef<number>(Date.now());
+
+  // Step drawings map: strictly isolated per stage
+  const [stepDrawings, setStepDrawings] = useState<Record<number, StepDrawingState>>(
+    () => initialSession.stepDrawings || {}
+  );
+
+  // Current Step State (Derived directly by step ID)
+  const currentStepState: StepDrawingState = stepDrawings[step] || {
+    drawnLines: [],
+    undoStack: [],
+  };
+
+  // Helper to update current step's drawing state and persist immediately
+  const updateCurrentStepState = (updater: (prev: StepDrawingState) => StepDrawingState) => {
+    setStepDrawings((prevMap) => {
+      const existing = prevMap[step] || { drawnLines: [], undoStack: [] };
+      const nextState = updater(existing);
+      const updatedMap = { ...prevMap, [step]: nextState };
+      kidsStorage.saveSession({ stepDrawings: updatedMap });
+      return updatedMap;
+    });
+  };
+
+  // SVG Ref for exact coordinate conversion
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Helper for 1:1 SVG coordinate conversion
+  // Transient drag states (for in-flight line drawing)
+  const [activeStart, setActiveStart] = useState<string | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+
+  // STEP 2 drag state
+  const lineStart = { x: 100, y: 200 };
+  const lineEnd = { x: 300, y: 200 };
+  const [isDrawingLine2, setIsDrawingLine2] = useState(false);
+  const [currentLine2Drag, setCurrentLine2Drag] = useState<{ x: number; y: number } | null>(null);
+
+  // STEP 9 & 10 circle drag states
+  const [isDrawingCircle9, setIsDrawingCircle9] = useState(false);
+  const [isDrawingCircle10, setIsDrawingCircle10] = useState(false);
+
+  // Auto-advance celebration overlay & countdown
+  const [celebrationCountdown, setCelebrationCountdown] = useState<number | null>(null);
+
+  // Persist general session data
+  useEffect(() => {
+    kidsStorage.saveSession({
+      step,
+      stars,
+      activeColor,
+      customColors,
+      strokeWidth,
+      themeMode,
+      textSizeMode,
+      sfxEnabled,
+      bgMusicEnabled,
+    });
+  }, [step, stars, activeColor, customColors, strokeWidth, themeMode, textSizeMode, sfxEnabled, bgMusicEnabled]);
+
+  // Track step view on mount & step changes
+  useEffect(() => {
+    stepStartTimeRef.current = Date.now();
+
+    analytics.trackLessonListViewed('kids');
+    analytics.trackStepStarted({
+      lesson_id: `kids-step-${step}`,
+      lesson_number: step,
+      step_number: step,
+      total_steps: 20,
+    });
+
+    if (step === 1) {
+      analytics.trackLessonStarted({
+        lesson_id: 'kids-adventure-all',
+        lesson_number: 1,
+        step_number: 1,
+        total_steps: 20,
+      });
+    }
+  }, [step]);
+
+  // Sync audio service
+  useEffect(() => {
+    soundEffects.setSfxEnabled(sfxEnabled);
+  }, [sfxEnabled]);
+
+  useEffect(() => {
+    soundEffects.setBgMusicEnabled(bgMusicEnabled);
+    return () => {
+      soundEffects.stopAmbientMusic();
+    };
+  }, [bgMusicEnabled]);
+
+  // Trigger celebration confetti
+  const triggerConfetti = (particleCount = 50) => {
+    confetti({
+      particleCount,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#3A6B5C', '#D4A373', '#5A7184', '#8C6D9E', '#E63946'],
+    });
+  };
+
+  // 1:1 SVG coordinate converter
   const getSvgCoordinates = (e: React.PointerEvent<Element>, viewBoxSize = 400) => {
     if (!svgRef.current) return { x: viewBoxSize / 2, y: viewBoxSize / 2 };
     const rect = svgRef.current.getBoundingClientRect();
@@ -43,8 +173,12 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
     return { x, y };
   };
 
-  // Helper to find closest vertex within threshold
-  const findClosestVertex = <T extends { id: string; x: number; y: number }>(coords: { x: number; y: number }, vertices: T[], threshold = 40) => {
+  // Generous touch hit-testing (48px threshold)
+  const findClosestVertex = <T extends { id: string; x: number; y: number }>(
+    coords: { x: number; y: number },
+    vertices: T[],
+    threshold = 48
+  ) => {
     for (const v of vertices) {
       if (Math.hypot(coords.x - v.x, coords.y - v.y) <= threshold) {
         return v;
@@ -53,83 +187,171 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
     return null;
   };
 
+  // Sorted unique edge key (e.g. ['a', 'b'].sort().join('-'))
   const getEdgeKey = (id1: string, id2: string) => [id1, id2].sort().join('-');
 
-  // STEP 1: Place 1 dot
-  const [dot1, setDot1] = useState<{ x: number; y: number; color: string } | null>(null);
+  // Step 11: 3 Petal Guide Points
+  const petalGuidePoints3 = [
+    { id: 0, ang: -90, x: 200, y: 115, label: '1' },
+    { id: 1, ang: 30, x: Math.round(200 + 85 * Math.cos((30 * Math.PI) / 180)), y: Math.round(200 + 85 * Math.sin((30 * Math.PI) / 180)), label: '2' },
+    { id: 2, ang: 150, x: Math.round(200 + 85 * Math.cos((150 * Math.PI) / 180)), y: Math.round(200 + 85 * Math.sin((150 * Math.PI) / 180)), label: '3' },
+  ];
+  const bloomedPetals3 = currentStepState.bloomedPetals3 || [];
 
-  // STEP 2: Drag line
-  const lineStart = { x: 100, y: 200 };
-  const lineEnd = { x: 300, y: 200 };
-  const [isDrawingLine, setIsDrawingLine] = useState(false);
-  const [lineCompleted, setLineCompleted] = useState(false);
-  const [lineColor, setLineColor] = useState('#3A6B5C');
-  const [currentLineDrag, setCurrentLineDrag] = useState<{ x: number; y: number } | null>(null);
+  // Step 12: 6 Petal Guide Points
+  const petalGuidePoints6 = [
+    { id: 0, ang: -90, label: '1' },
+    { id: 1, ang: -30, label: '2' },
+    { id: 2, ang: 30, label: '3' },
+    { id: 3, ang: 90, label: '4' },
+    { id: 4, ang: 150, label: '5' },
+    { id: 5, ang: 210, label: '6' },
+  ].map((p) => ({
+    ...p,
+    x: Math.round(200 + 85 * Math.cos((p.ang * Math.PI) / 180)),
+    y: Math.round(200 + 85 * Math.sin((p.ang * Math.PI) / 180)),
+  }));
+  const bloomedPetals6 = currentStepState.bloomedPetals6 || [];
 
-  // Generic Polygon / Star line state for stages 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18, 19, 20
-  const [drawnLines, setDrawnLines] = useState<DrawnLine[]>([]);
-  const [activeStart, setActiveStart] = useState<string | null>(null);
-  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
-
-  // STEP 9: Circle
-  const [circleRadius, setCircleRadius] = useState<number>(0);
-  const [isDrawingCircle, setIsDrawingCircle] = useState(false);
-  const [circleCompleted, setCircleCompleted] = useState(false);
-
-  // STEP 10: Two Overlapping Circles
-  const [circle2Radius, setCircle2Radius] = useState<number>(0);
-  const [isDrawingCircle2, setIsDrawingCircle2] = useState(false);
-  const [circle2Completed, setCircle2Completed] = useState(false);
-
-  // STEP 11: 3 Petals Rosette
-  const [petals3Count, setPetals3Count] = useState<number>(0);
-
-  // STEP 12: Full 6 Petals Rosette
-  const [petals6Count, setPetals6Count] = useState<number>(0);
-
-  const triggerConfetti = () => {
-    confetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.6 },
-      colors: ['#3A6B5C', '#D4A373', '#5A7184', '#8C6D9E']
-    });
-  };
-
+  // Navigation handlers
   const handleNext = () => {
-    setDrawnLines([]);
+    setCelebrationCountdown(null);
+
+    const duration = Math.max(1, Math.round((Date.now() - stepStartTimeRef.current) / 1000));
+    analytics.trackStepCompleted({
+      lesson_id: `kids-step-${step}`,
+      lesson_number: step,
+      step_number: step,
+      total_steps: 20,
+      duration_seconds: duration,
+      completion_percentage: Math.round((step / 20) * 100),
+    });
+
+    if (step === 20) {
+      soundEffects.playCrownFanfare();
+      triggerConfetti(120);
+      analytics.trackLessonCompleted({
+        lesson_id: 'kids-adventure-all',
+        lesson_number: 20,
+        step_number: 20,
+        total_steps: 20,
+        completion_percentage: 100,
+      });
+    } else {
+      soundEffects.playStepSuccess();
+      triggerConfetti(50);
+    }
+
     setActiveStart(null);
     setDragCurrent(null);
-    setStep(s => Math.min(s + 1, 20));
-    triggerConfetti();
+    setStep((s) => Math.min(s + 1, 20));
   };
 
   const handlePrev = () => {
-    setDrawnLines([]);
+    soundEffects.playUndo();
+    setCelebrationCountdown(null);
     setActiveStart(null);
     setDragCurrent(null);
-    setStep(s => Math.max(s - 1, 1));
+    setStep((s) => Math.max(s - 1, 1));
   };
 
-  const handleResetStep = () => {
-    setDrawnLines([]);
+  // Robust undo handling
+  const handleUndo = () => {
+    soundEffects.playUndo();
+    setCelebrationCountdown(null);
+
+    if (currentStepState.drawnLines && currentStepState.drawnLines.length > 0) {
+      updateCurrentStepState((prev) => ({
+        ...prev,
+        drawnLines: prev.drawnLines.slice(0, -1),
+      }));
+      return;
+    }
+
+    if (step === 1 && currentStepState.dot1) {
+      updateCurrentStepState((prev) => ({ ...prev, dot1: null }));
+      return;
+    }
+    if (step === 2 && currentStepState.lineCompleted) {
+      updateCurrentStepState((prev) => ({ ...prev, lineCompleted: false }));
+      return;
+    }
+    if (step === 9 && currentStepState.circleCompleted) {
+      updateCurrentStepState((prev) => ({ ...prev, circleCompleted: false, circleRadius: 0 }));
+      return;
+    }
+    if (step === 10 && currentStepState.circle2Completed) {
+      updateCurrentStepState((prev) => ({ ...prev, circle2Completed: false, circle2Radius: 0 }));
+      return;
+    }
+    if (step === 11 && bloomedPetals3.length > 0) {
+      updateCurrentStepState((prev) => ({
+        ...prev,
+        bloomedPetals3: (prev.bloomedPetals3 || []).slice(0, -1),
+        petals3Count: Math.max((prev.bloomedPetals3?.length || 1) - 1, 0),
+      }));
+      return;
+    }
+    if (step === 12 && bloomedPetals6.length > 0) {
+      updateCurrentStepState((prev) => ({
+        ...prev,
+        bloomedPetals6: (prev.bloomedPetals6 || []).slice(0, -1),
+        petals6Count: Math.max((prev.bloomedPetals6?.length || 1) - 1, 0),
+      }));
+      return;
+    }
+
+    if (step > 1) {
+      setStep((s) => s - 1);
+    }
+  };
+
+  // Reset current step
+  const handleResetCurrentStep = () => {
+    soundEffects.playUndo();
+    setCelebrationCountdown(null);
+    updateCurrentStepState(() => ({
+      drawnLines: [],
+      undoStack: [],
+      dot1: null,
+      lineCompleted: false,
+      circleRadius: 0,
+      circleCompleted: false,
+      circle2Radius: 0,
+      circle2Completed: false,
+      petals3Count: 0,
+      petals6Count: 0,
+      bloomedPetals3: [],
+      bloomedPetals6: [],
+    }));
     setActiveStart(null);
     setDragCurrent(null);
-    if (step === 1) setDot1(null);
-    if (step === 2) { setLineCompleted(false); setCurrentLineDrag(null); }
-    if (step === 9) { setCircleRadius(0); setCircleCompleted(false); }
-    if (step === 10) { setCircle2Radius(0); setCircle2Completed(false); }
-    if (step === 11) setPetals3Count(0);
-    if (step === 12) setPetals6Count(0);
   };
 
-  const handleUndoStep = () => {
-    if (drawnLines.length > 0) setDrawnLines(prev => prev.slice(0, -1));
-    if (step === 11 && petals3Count > 0) setPetals3Count(c => c - 1);
-    if (step === 12 && petals6Count > 0) setPetals6Count(c => c - 1);
+  // Reset all progress across all 20 stages (clean restart)
+  const handleResetAllProgress = () => {
+    soundEffects.playUndo();
+    kidsStorage.resetAllProgress();
+    setStep(1);
+    setStars(0);
+    setStepDrawings({});
+    setCelebrationCountdown(null);
+    setActiveStart(null);
+    setDragCurrent(null);
   };
 
-  // Stage configurations for vertices and valid edges
+  const handleConfirmExit = () => {
+    setIsExitModalOpen(false);
+    analytics.trackLessonExited({
+      lesson_id: `kids-step-${step}`,
+      lesson_number: step,
+      step_number: step,
+      total_steps: 20,
+    });
+    onReturn();
+  };
+
+  // Stage configurations for geometric figures
   const getStageConfig = () => {
     switch (step) {
       case 3: // Triangle
@@ -137,10 +359,19 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
           vertices: [
             { id: 't1', x: 200, y: 70, label: 'A' },
             { id: 't2', x: 80, y: 290, label: 'B' },
-            { id: 't3', x: 320, y: 290, label: 'C' }
+            { id: 't3', x: 320, y: 290, label: 'C' },
           ],
-          edges: ['t1-t2', 't2-t3', 't1-t3'],
-          polygonSvg: <polygon points="200,70 80,290 320,290" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" />
+          edges: [getEdgeKey('t1', 't2'), getEdgeKey('t2', 't3'), getEdgeKey('t1', 't3')],
+          polygonSvg: (
+            <polygon
+              points="200,70 80,290 320,290"
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3.5"
+              strokeDasharray="6 6"
+              opacity="0.6"
+            />
+          ),
         };
       case 4: // Square
         return {
@@ -148,112 +379,196 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
             { id: 's1', x: 110, y: 100, label: 'A' },
             { id: 's2', x: 290, y: 100, label: 'B' },
             { id: 's3', x: 290, y: 280, label: 'C' },
-            { id: 's4', x: 110, y: 280, label: 'D' }
+            { id: 's4', x: 110, y: 280, label: 'D' },
           ],
-          edges: ['s1-s2', 's2-s3', 's3-s4', 's1-s4'],
-          polygonSvg: <rect x="110" y="100" width="180" height="180" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" rx="6" />
+          edges: [getEdgeKey('s1', 's2'), getEdgeKey('s2', 's3'), getEdgeKey('s3', 's4'), getEdgeKey('s1', 's4')],
+          polygonSvg: (
+            <rect
+              x="110"
+              y="100"
+              width="180"
+              height="180"
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3.5"
+              strokeDasharray="6 6"
+              rx="6"
+              opacity="0.6"
+            />
+          ),
         };
       case 5: // Right Angle 90°
         return {
           vertices: [
             { id: 'a1', x: 100, y: 100, label: 'A' },
             { id: 'a2', x: 100, y: 280, label: 'B' },
-            { id: 'a3', x: 280, y: 280, label: 'C' }
+            { id: 'a3', x: 280, y: 280, label: 'C' },
           ],
-          edges: ['a1-a2', 'a2-a3'],
-          polygonSvg: <polyline points="100,100 100,280 280,280" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" />
+          edges: [getEdgeKey('a1', 'a2'), getEdgeKey('a2', 'a3')],
+          polygonSvg: (
+            <polyline
+              points="100,100 100,280 280,280"
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3.5"
+              strokeDasharray="6 6"
+              opacity="0.6"
+            />
+          ),
         };
       case 6: // Pentagon (5 sides)
         return {
           vertices: Array.from({ length: 5 }).map((_, i) => {
             const ang = (i * 72 - 90) * (Math.PI / 180);
-            return { id: `p${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
+            return {
+              id: `p${i + 1}`,
+              x: Math.round(200 + 115 * Math.cos(ang)),
+              y: Math.round(200 + 115 * Math.sin(ang)),
+              label: `${i + 1}`,
+            };
           }),
-          edges: ['p1-p2', 'p2-p3', 'p3-p4', 'p4-p5', 'p1-p5'],
+          edges: [
+            getEdgeKey('p1', 'p2'),
+            getEdgeKey('p2', 'p3'),
+            getEdgeKey('p3', 'p4'),
+            getEdgeKey('p4', 'p5'),
+            getEdgeKey('p1', 'p5'),
+          ],
           polygonSvg: (
             <polygon
-              points={Array.from({ length: 5 }).map((_, i) => {
-                const ang = (i * 72 - 90) * (Math.PI / 180);
-                return `${Math.round(200 + 110 * Math.cos(ang))},${Math.round(200 + 110 * Math.sin(ang))}`;
-              }).join(' ')}
-              fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5"
+              points={Array.from({ length: 5 })
+                .map((_, i) => {
+                  const ang = (i * 72 - 90) * (Math.PI / 180);
+                  return `${Math.round(200 + 115 * Math.cos(ang))},${Math.round(200 + 115 * Math.sin(ang))}`;
+                })
+                .join(' ')}
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3"
+              strokeDasharray="6 6"
+              opacity="0.6"
             />
-          )
+          ),
         };
       case 7: // Hexagon (6 sides)
         return {
           vertices: Array.from({ length: 6 }).map((_, i) => {
             const ang = (i * 60 - 90) * (Math.PI / 180);
-            return { id: `h${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
+            return {
+              id: `h${i + 1}`,
+              x: Math.round(200 + 115 * Math.cos(ang)),
+              y: Math.round(200 + 115 * Math.sin(ang)),
+              label: `${i + 1}`,
+            };
           }),
-          edges: ['h1-h2', 'h2-h3', 'h3-h4', 'h4-h5', 'h5-h6', 'h1-h6'],
+          edges: [
+            getEdgeKey('h1', 'h2'),
+            getEdgeKey('h2', 'h3'),
+            getEdgeKey('h3', 'h4'),
+            getEdgeKey('h4', 'h5'),
+            getEdgeKey('h5', 'h6'),
+            getEdgeKey('h1', 'h6'),
+          ],
           polygonSvg: (
             <polygon
-              points={Array.from({ length: 6 }).map((_, i) => {
-                const ang = (i * 60 - 90) * (Math.PI / 180);
-                return `${Math.round(200 + 110 * Math.cos(ang))},${Math.round(200 + 110 * Math.sin(ang))}`;
-              }).join(' ')}
-              fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5"
+              points={Array.from({ length: 6 })
+                .map((_, i) => {
+                  const ang = (i * 60 - 90) * (Math.PI / 180);
+                  return `${Math.round(200 + 115 * Math.cos(ang))},${Math.round(200 + 115 * Math.sin(ang))}`;
+                })
+                .join(' ')}
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3"
+              strokeDasharray="6 6"
+              opacity="0.6"
             />
-          )
+          ),
         };
       case 8: // Octagon (8 sides)
         return {
           vertices: Array.from({ length: 8 }).map((_, i) => {
             const ang = (i * 45 - 90) * (Math.PI / 180);
-            return { id: `o${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
+            return {
+              id: `o${i + 1}`,
+              x: Math.round(200 + 115 * Math.cos(ang)),
+              y: Math.round(200 + 115 * Math.sin(ang)),
+              label: `${i + 1}`,
+            };
           }),
-          edges: ['o1-o2', 'o2-o3', 'o3-o4', 'o4-o5', 'o5-o6', 'o6-o7', 'o7-o8', 'o1-o8'],
+          edges: [
+            getEdgeKey('o1', 'o2'),
+            getEdgeKey('o2', 'o3'),
+            getEdgeKey('o3', 'o4'),
+            getEdgeKey('o4', 'o5'),
+            getEdgeKey('o5', 'o6'),
+            getEdgeKey('o6', 'o7'),
+            getEdgeKey('o7', 'o8'),
+            getEdgeKey('o1', 'o8'),
+          ],
           polygonSvg: (
             <polygon
-              points={Array.from({ length: 8 }).map((_, i) => {
-                const ang = (i * 45 - 90) * (Math.PI / 180);
-                return `${Math.round(200 + 110 * Math.cos(ang))},${Math.round(200 + 110 * Math.sin(ang))}`;
-              }).join(' ')}
-              fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5"
+              points={Array.from({ length: 8 })
+                .map((_, i) => {
+                  const ang = (i * 45 - 90) * (Math.PI / 180);
+                  return `${Math.round(200 + 115 * Math.cos(ang))},${Math.round(200 + 115 * Math.sin(ang))}`;
+                })
+                .join(' ')}
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3"
+              strokeDasharray="6 6"
+              opacity="0.6"
             />
-          )
+          ),
         };
       case 13: // Hexagram Star (6 lines)
         return {
           vertices: Array.from({ length: 6 }).map((_, i) => {
             const ang = (i * 60 - 90) * (Math.PI / 180);
-            return { id: `st${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
+            return {
+              id: `st${i + 1}`,
+              x: Math.round(200 + 115 * Math.cos(ang)),
+              y: Math.round(200 + 115 * Math.sin(ang)),
+              label: `${i + 1}`,
+            };
           }),
-          edges: ['st1-st3', 'st3-st5', 'st1-st5', 'st2-st4', 'st4-st6', 'st2-st6'],
+          edges: [
+            getEdgeKey('st1', 'st3'),
+            getEdgeKey('st3', 'st5'),
+            getEdgeKey('st1', 'st5'),
+            getEdgeKey('st2', 'st4'),
+            getEdgeKey('st4', 'st6'),
+            getEdgeKey('st2', 'st6'),
+          ],
           polygonSvg: (
-            <g>
-              <polygon points="200,90 295,255 105,255" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" />
-              <polygon points="200,310 105,145 295,145" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" />
+            <g opacity="0.6">
+              <polygon points="200,85 300,258 100,258" fill="none" stroke="#94A3B8" strokeWidth="3" strokeDasharray="6 6" />
+              <polygon points="200,315 100,142 300,142" fill="none" stroke="#94A3B8" strokeWidth="3" strokeDasharray="6 6" />
             </g>
-          )
+          ),
         };
-      case 14: // Rhombus Diamond (4 lines)
+      case 14: // Rhombus Diamond
         return {
           vertices: [
             { id: 'd1', x: 200, y: 70, label: 'A' },
-            { id: 'd2', x: 310, y: 200, label: 'B' },
+            { id: 'd2', x: 320, y: 200, label: 'B' },
             { id: 'd3', x: 200, y: 330, label: 'C' },
-            { id: 'd4', x: 90, y: 200, label: 'D' }
+            { id: 'd4', x: 80, y: 200, label: 'D' },
           ],
-          edges: ['d1-d2', 'd2-d3', 'd3-d4', 'd1-d4'],
-          polygonSvg: <polygon points="200,70 310,200 200,330 90,200" fill="none" stroke="#CBD5E1" strokeWidth="3" strokeDasharray="5 5" />
-        };
-      case 15: // Seljuk 8-Point Star (8 Outer Points)
-        return {
-          vertices: Array.from({ length: 8 }).map((_, i) => {
-            const ang = (i * 45 - 90) * (Math.PI / 180);
-            return { id: `sel${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
-          }),
-          edges: ['sel1-sel3', 'sel3-sel5', 'sel5-sel7', 'sel1-sel7', 'sel2-sel4', 'sel4-sel6', 'sel6-sel8', 'sel2-sel8'],
+          edges: [getEdgeKey('d1', 'd2'), getEdgeKey('d2', 'd3'), getEdgeKey('d3', 'd4'), getEdgeKey('d1', 'd4')],
           polygonSvg: (
-            <g>
-              <rect x="122" y="122" width="156" height="156" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-              <rect x="122" y="122" width="156" height="156" transform="rotate(45 200 200)" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-            </g>
-          )
+            <polygon
+              points="200,70 320,200 200,330 80,200"
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="3"
+              strokeDasharray="6 6"
+              opacity="0.6"
+            />
+          ),
         };
-      case 16: // Overlapping Squares Rotated 45°
+      case 15: // Seljuk Double Squares (Foundation Skeleton)
         return {
           vertices: [
             { id: 'sqa1', x: 120, y: 120, label: 'A' },
@@ -263,82 +578,300 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
             { id: 'sqb1', x: 200, y: 87, label: 'E' },
             { id: 'sqb2', x: 313, y: 200, label: 'F' },
             { id: 'sqb3', x: 200, y: 313, label: 'G' },
-            { id: 'sqb4', x: 87, y: 200, label: 'H' }
+            { id: 'sqb4', x: 87, y: 200, label: 'H' },
           ],
-          edges: ['sqa1-sqa2', 'sqa2-sqa3', 'sqa3-sqa4', 'sqa1-sqa4', 'sqb1-sqb2', 'sqb2-sqb3', 'sqb3-sqb4', 'sqb1-sqb4'],
+          edges: [
+            getEdgeKey('sqa1', 'sqa2'),
+            getEdgeKey('sqa2', 'sqa3'),
+            getEdgeKey('sqa3', 'sqa4'),
+            getEdgeKey('sqa1', 'sqa4'),
+            getEdgeKey('sqb1', 'sqb2'),
+            getEdgeKey('sqb2', 'sqb3'),
+            getEdgeKey('sqb3', 'sqb4'),
+            getEdgeKey('sqb1', 'sqb4'),
+          ],
           polygonSvg: (
-            <g>
-              <rect x="120" y="120" width="160" height="160" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-              <rect x="120" y="120" width="160" height="160" transform="rotate(45 200 200)" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
+            <g opacity="0.6">
+              <rect x="120" y="120" width="160" height="160" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeDasharray="5 5" />
+              <rect
+                x="120"
+                y="120"
+                width="160"
+                height="160"
+                transform="rotate(45 200 200)"
+                fill="none"
+                stroke="#94A3B8"
+                strokeWidth="2.5"
+                strokeDasharray="5 5"
+              />
             </g>
-          )
+          ),
         };
-      case 17: // Andalusian Tile Grid Star
+      case 16: {
+        // True Seljuk 8-Point Star Motif (Octagram 8/3 rays connecting the 8 tips)
+        const selVertices = Array.from({ length: 8 }).map((_, i) => {
+          const ang = (i * 45 - 90) * (Math.PI / 180);
+          return {
+            id: `sel${i + 1}`,
+            x: Math.round(200 + 118 * Math.cos(ang)),
+            y: Math.round(200 + 118 * Math.sin(ang)),
+            label: `${i + 1}`,
+          };
+        });
+        const starPairs: [string, string][] = [
+          ['sel1', 'sel4'],
+          ['sel4', 'sel7'],
+          ['sel7', 'sel2'],
+          ['sel2', 'sel5'],
+          ['sel5', 'sel8'],
+          ['sel8', 'sel3'],
+          ['sel3', 'sel6'],
+          ['sel6', 'sel1'],
+        ];
         return {
-          vertices: [
-            { id: 'an1', x: 200, y: 90, label: '1' },
-            { id: 'an2', x: 310, y: 200, label: '2' },
-            { id: 'an3', x: 200, y: 310, label: '3' },
-            { id: 'an4', x: 90, y: 200, label: '4' },
-            { id: 'an5', x: 130, y: 130, label: '5' },
-            { id: 'an6', x: 270, y: 130, label: '6' },
-            { id: 'an7', x: 270, y: 270, label: '7' },
-            { id: 'an8', x: 130, y: 270, label: '8' }
-          ],
-          edges: ['an1-an7', 'an1-an8', 'an3-an5', 'an3-an6', 'an2-an5', 'an2-an8', 'an4-an6', 'an4-an7'],
-          polygonSvg: <polygon points="200,90 270,130 310,200 270,270 200,310 130,270 90,200 130,130" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-        };
-      case 18: // Girih Pentagram Star
-        return {
-          vertices: Array.from({ length: 5 }).map((_, i) => {
-            const ang = (i * 72 - 90) * (Math.PI / 180);
-            return { id: `g${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
-          }),
-          edges: ['g1-g3', 'g3-g5', 'g5-g2', 'g2-g4', 'g4-g1'],
+          vertices: selVertices,
+          edges: starPairs.map(([a, b]) => getEdgeKey(a, b)),
           polygonSvg: (
-            <polygon
-              points={Array.from({ length: 5 }).map((_, i) => {
-                const ang = ((i * 2) % 5 * 72 - 90) * (Math.PI / 180);
-                return `${Math.round(200 + 110 * Math.cos(ang))},${Math.round(200 + 110 * Math.sin(ang))}`;
-              }).join(' ')}
-              fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4"
-            />
-          )
-        };
-      case 19: // Kumiko Asanoha Hemp Leaf
-        return {
-          vertices: [
-            { id: 'km0', x: 200, y: 200, label: 'C' },
-            ...Array.from({ length: 6 }).map((_, i) => {
-              const ang = (i * 60 - 90) * (Math.PI / 180);
-              return { id: `km${i+1}`, x: Math.round(200 + 110 * Math.cos(ang)), y: Math.round(200 + 110 * Math.sin(ang)), label: `${i+1}` };
-            })
-          ],
-          edges: ['km0-km1', 'km0-km2', 'km0-km3', 'km0-km4', 'km0-km5', 'km0-km6', 'km1-km2', 'km2-km3', 'km3-km4', 'km4-km5', 'km5-km6', 'km1-km6'],
-          polygonSvg: (
-            <g>
-              <polygon points={Array.from({ length: 6 }).map((_, i) => {
-                const ang = (i * 60 - 90) * (Math.PI / 180);
-                return `${Math.round(200 + 110 * Math.cos(ang))},${Math.round(200 + 110 * Math.sin(ang))}`;
-              }).join(' ')} fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-              {[0, 60, 120, 180, 240, 300].map(deg => {
-                const ang = (deg * Math.PI) / 180;
-                return <line key={deg} x1="200" y1="200" x2={Math.round(200 + 110 * Math.cos(ang))} y2={Math.round(200 + 110 * Math.sin(ang))} stroke="#CBD5E1" strokeWidth="2" strokeDasharray="4 4" />;
+            <g opacity="0.6">
+              {starPairs.map(([fromId, toId], idx) => {
+                const v1 = selVertices.find((v) => v.id === fromId)!;
+                const v2 = selVertices.find((v) => v.id === toId)!;
+                return (
+                  <line
+                    key={idx}
+                    x1={v1.x}
+                    y1={v1.y}
+                    x2={v2.x}
+                    y2={v2.y}
+                    stroke="#94A3B8"
+                    strokeWidth="2.5"
+                    strokeDasharray="5 5"
+                  />
+                );
               })}
             </g>
-          )
+          ),
         };
-      case 20: // Royal 12-Point Crown Star
+      }
+      case 17: {
+        // Andalusian Star Tile Grid (Guide lines now 100% MATCH the exact edges)
+        const anVertices = [
+          { id: 'an1', x: 200, y: 85, label: '1' },
+          { id: 'an2', x: 315, y: 200, label: '2' },
+          { id: 'an3', x: 200, y: 315, label: '3' },
+          { id: 'an4', x: 85, y: 200, label: '4' },
+          { id: 'an5', x: 135, y: 135, label: '5' },
+          { id: 'an6', x: 265, y: 135, label: '6' },
+          { id: 'an7', x: 265, y: 265, label: '7' },
+          { id: 'an8', x: 135, y: 265, label: '8' },
+        ];
+        const anEdges: [string, string][] = [
+          ['an1', 'an6'],
+          ['an6', 'an2'],
+          ['an2', 'an7'],
+          ['an7', 'an3'],
+          ['an3', 'an8'],
+          ['an8', 'an4'],
+          ['an4', 'an5'],
+          ['an5', 'an1'],
+        ];
         return {
-          vertices: Array.from({ length: 12 }).map((_, i) => {
-            const ang = (i * 30 - 90) * (Math.PI / 180);
-            return { id: `r${i+1}`, x: Math.round(200 + 115 * Math.cos(ang)), y: Math.round(200 + 115 * Math.sin(ang)), label: `${i+1}` };
-          }),
-          edges: ['r1-r5', 'r5-r9', 'r1-r9', 'r2-r6', 'r6-r10', 'r2-r10', 'r3-r7', 'r7-r11', 'r3-r11', 'r4-r8', 'r8-r12', 'r4-r12'],
+          vertices: anVertices,
+          edges: anEdges.map(([a, b]) => getEdgeKey(a, b)),
           polygonSvg: (
-            <circle cx="200" cy="200" r="115" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
-          )
+            <g opacity="0.6">
+              {anEdges.map(([fromId, toId], idx) => {
+                const v1 = anVertices.find((v) => v.id === fromId)!;
+                const v2 = anVertices.find((v) => v.id === toId)!;
+                return (
+                  <line
+                    key={idx}
+                    x1={v1.x}
+                    y1={v1.y}
+                    x2={v2.x}
+                    y2={v2.y}
+                    stroke="#94A3B8"
+                    strokeWidth="3"
+                    strokeDasharray="6 6"
+                  />
+                );
+              })}
+            </g>
+          ),
         };
+      }
+      case 18: {
+        // Persian Girih Pentagram Star (Fixed sorted edge keys & clear sequence guidance)
+        const gVertices = Array.from({ length: 5 }).map((_, i) => {
+          const ang = (i * 72 - 90) * (Math.PI / 180);
+          return {
+            id: `g${i + 1}`,
+            x: Math.round(200 + 115 * Math.cos(ang)),
+            y: Math.round(200 + 115 * Math.sin(ang)),
+            label: `${i + 1}`,
+          };
+        });
+        const gEdges: [string, string][] = [
+          ['g1', 'g3'],
+          ['g3', 'g5'],
+          ['g5', 'g2'],
+          ['g2', 'g4'],
+          ['g4', 'g1'],
+        ];
+        return {
+          vertices: gVertices,
+          // CRITICAL: every edge is generated through getEdgeKey so string ordering matches!
+          edges: gEdges.map(([a, b]) => getEdgeKey(a, b)),
+          polygonSvg: (
+            <g opacity="0.6">
+              {gEdges.map(([fromId, toId], idx) => {
+                const v1 = gVertices.find((v) => v.id === fromId)!;
+                const v2 = gVertices.find((v) => v.id === toId)!;
+                return (
+                  <line
+                    key={idx}
+                    x1={v1.x}
+                    y1={v1.y}
+                    x2={v2.x}
+                    y2={v2.y}
+                    stroke="#94A3B8"
+                    strokeWidth="3"
+                    strokeDasharray="6 6"
+                  />
+                );
+              })}
+            </g>
+          ),
+        };
+      }
+      case 19: {
+        // Kumiko Asanoha Hemp Leaf: Center C and 6 outer vertices
+        const kmVertices = [
+          { id: 'km0', x: 200, y: 200, label: 'C' },
+          ...Array.from({ length: 6 }).map((_, i) => {
+            const ang = (i * 60 - 90) * (Math.PI / 180);
+            return {
+              id: `km${i + 1}`,
+              x: Math.round(200 + 115 * Math.cos(ang)),
+              y: Math.round(200 + 115 * Math.sin(ang)),
+              label: `${i + 1}`,
+            };
+          }),
+        ];
+        const outerKm = kmVertices.slice(1);
+        return {
+          vertices: kmVertices,
+          edges: [
+            getEdgeKey('km0', 'km1'),
+            getEdgeKey('km0', 'km2'),
+            getEdgeKey('km0', 'km3'),
+            getEdgeKey('km0', 'km4'),
+            getEdgeKey('km0', 'km5'),
+            getEdgeKey('km0', 'km6'),
+            getEdgeKey('km1', 'km2'),
+            getEdgeKey('km2', 'km3'),
+            getEdgeKey('km3', 'km4'),
+            getEdgeKey('km4', 'km5'),
+            getEdgeKey('km5', 'km6'),
+            getEdgeKey('km1', 'km6'),
+          ],
+          polygonSvg: (
+            <g opacity="0.6">
+              {/* Outer hexagon guide matching exactly vertices 1..6 */}
+              <polygon
+                points={outerKm.map((v) => `${v.x},${v.y}`).join(' ')}
+                fill="none"
+                stroke="#94A3B8"
+                strokeWidth="2.5"
+                strokeDasharray="5 5"
+              />
+              {/* 6 radial spokes from center C to each vertex 1..6 */}
+              {outerKm.map((v) => (
+                <line
+                  key={`km-spoke-${v.id}`}
+                  x1="200"
+                  y1="200"
+                  x2={v.x}
+                  y2={v.y}
+                  stroke="#94A3B8"
+                  strokeWidth="2.5"
+                  strokeDasharray="5 5"
+                />
+              ))}
+            </g>
+          ),
+        };
+      }
+      case 20: {
+        // Royal 12-Point Crown Star (4 intersecting equilateral triangles)
+        const rVertices = Array.from({ length: 12 }).map((_, i) => {
+          const ang = (i * 30 - 90) * (Math.PI / 180);
+          return {
+            id: `r${i + 1}`,
+            x: Math.round(200 + 120 * Math.cos(ang)),
+            y: Math.round(200 + 120 * Math.sin(ang)),
+            label: `${i + 1}`,
+          };
+        });
+
+        const triangleGroups = [
+          ['r1', 'r5', 'r9'],
+          ['r2', 'r6', 'r10'],
+          ['r3', 'r7', 'r11'],
+          ['r4', 'r8', 'r12'],
+        ];
+
+        return {
+          vertices: rVertices,
+          edges: [
+            getEdgeKey('r1', 'r5'),
+            getEdgeKey('r5', 'r9'),
+            getEdgeKey('r1', 'r9'),
+            getEdgeKey('r2', 'r6'),
+            getEdgeKey('r6', 'r10'),
+            getEdgeKey('r2', 'r10'),
+            getEdgeKey('r3', 'r7'),
+            getEdgeKey('r7', 'r11'),
+            getEdgeKey('r3', 'r11'),
+            getEdgeKey('r4', 'r8'),
+            getEdgeKey('r8', 'r12'),
+            getEdgeKey('r4', 'r12'),
+          ],
+          polygonSvg: (
+            <g opacity="0.6">
+              {/* Outer guide circle */}
+              <circle
+                cx="200"
+                cy="200"
+                r="120"
+                fill="none"
+                stroke="#94A3B8"
+                strokeWidth="2"
+                strokeDasharray="4 4"
+              />
+              {/* 4 dashed guide triangles for the 12-point royal star */}
+              {triangleGroups.map((group, tIdx) => {
+                const pts = group
+                  .map((id) => {
+                    const v = rVertices.find((item) => item.id === id)!;
+                    return `${v.x},${v.y}`;
+                  })
+                  .join(' ');
+                return (
+                  <polygon
+                    key={`tri-guide-${tIdx}`}
+                    points={pts}
+                    fill="none"
+                    stroke="#94A3B8"
+                    strokeWidth="2.5"
+                    strokeDasharray="5 5"
+                  />
+                );
+              })}
+            </g>
+          ),
+        };
+      }
       default:
         return null;
     }
@@ -346,346 +879,706 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
 
   const stageCfg = getStageConfig();
 
+  // STRICT ISOLATION: Only render lines that belong strictly to the current stage's valid edges!
+  const drawnLines = stageCfg
+    ? (currentStepState.drawnLines || []).filter((line) => {
+        const key = getEdgeKey(line.from, line.to);
+        return stageCfg.edges.includes(key);
+      })
+    : currentStepState.drawnLines || [];
+
+  // Step 18 guided next move
+  const step18Sequence = [
+    { from: 'g1', to: 'g3', fromLabel: '1', toLabel: '3' },
+    { from: 'g3', to: 'g5', fromLabel: '3', toLabel: '5' },
+    { from: 'g5', to: 'g2', fromLabel: '5', toLabel: '2' },
+    { from: 'g2', to: 'g4', fromLabel: '2', toLabel: '4' },
+    { from: 'g4', to: 'g1', fromLabel: '4', toLabel: '1' },
+  ];
+  const nextStep18Move =
+    step === 18
+      ? step18Sequence.find((seq) => !drawnLines.some((l) => getEdgeKey(l.from, l.to) === getEdgeKey(seq.from, seq.to)))
+      : null;
+
+  // Step 20 guided next move (4 equilateral triangles: 1-5-9, 2-6-10, 3-7-11, 4-8-12)
+  const step20Sequence = [
+    { from: 'r1', to: 'r5', fromLabel: '1', toLabel: '5', group: isTr ? '1. Üçgen' : 'Triangle 1' },
+    { from: 'r5', to: 'r9', fromLabel: '5', toLabel: '9', group: isTr ? '1. Üçgen' : 'Triangle 1' },
+    { from: 'r9', to: 'r1', fromLabel: '9', toLabel: '1', group: isTr ? '1. Üçgen' : 'Triangle 1' },
+    { from: 'r2', to: 'r6', fromLabel: '2', toLabel: '6', group: isTr ? '2. Üçgen' : 'Triangle 2' },
+    { from: 'r6', to: 'r10', fromLabel: '6', toLabel: '10', group: isTr ? '2. Üçgen' : 'Triangle 2' },
+    { from: 'r10', to: 'r2', fromLabel: '10', toLabel: '2', group: isTr ? '2. Üçgen' : 'Triangle 2' },
+    { from: 'r3', to: 'r7', fromLabel: '3', toLabel: '7', group: isTr ? '3. Üçgen' : 'Triangle 3' },
+    { from: 'r7', to: 'r11', fromLabel: '7', toLabel: '11', group: isTr ? '3. Üçgen' : 'Triangle 3' },
+    { from: 'r11', to: 'r3', fromLabel: '11', toLabel: '3', group: isTr ? '3. Üçgen' : 'Triangle 3' },
+    { from: 'r4', to: 'r8', fromLabel: '4', toLabel: '8', group: isTr ? '4. Üçgen' : 'Triangle 4' },
+    { from: 'r8', to: 'r12', fromLabel: '8', toLabel: '12', group: isTr ? '4. Üçgen' : 'Triangle 4' },
+    { from: 'r12', to: 'r4', fromLabel: '12', toLabel: '4', group: isTr ? '4. Üçgen' : 'Triangle 4' },
+  ];
+  const nextStep20Move =
+    step === 20
+      ? step20Sequence.find((seq) => !drawnLines.some((l) => getEdgeKey(l.from, l.to) === getEdgeKey(seq.from, seq.to)))
+      : null;
+
+  // Determine stage completion accurately
+  const isCurrentStepReadyToAdvance = Boolean(
+    (step === 1 && currentStepState.dot1) ||
+      (step === 2 && currentStepState.lineCompleted) ||
+      (step === 9 && currentStepState.circleCompleted) ||
+      (step === 10 && currentStepState.circle2Completed) ||
+      (step === 11 && (bloomedPetals3.length >= 3 || (currentStepState.petals3Count ?? 0) >= 3)) ||
+      (step === 12 && (bloomedPetals6.length >= 6 || (currentStepState.petals6Count ?? 0) >= 6)) ||
+      (stageCfg && drawnLines.length >= stageCfg.edges.length)
+  );
+
+  // Trigger celebration and auto-advance exclusively when user actively completes a step
+  const triggerStepCompletionCelebration = (completedStep: number) => {
+    if (completedStep === 20) {
+      soundEffects.playCrownFanfare();
+      triggerConfetti(120);
+      setCelebrationCountdown(null);
+    } else {
+      soundEffects.playStepSuccess();
+      soundEffects.playStarSparkle();
+      triggerConfetti(60);
+      setCelebrationCountdown(3);
+    }
+  };
+
+  // Countdown timer for auto-advance
+  useEffect(() => {
+    if (celebrationCountdown === null) return;
+    if (celebrationCountdown <= 0) {
+      setCelebrationCountdown(null);
+      handleNext();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setCelebrationCountdown((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [celebrationCountdown]);
+
+  // Dynamic Theme Styling Classes
+  const getThemeContainerClass = () => {
+    switch (themeMode) {
+      case 'high-contrast':
+        return 'bg-white text-black border-4 border-black';
+      case 'vibrant':
+        return 'bg-amber-50/60 text-slate-900 border-2 border-amber-300';
+      case 'night':
+        return 'bg-slate-900 text-slate-100 border-2 border-slate-700';
+      default:
+        return 'bg-white text-slate-900 border border-slate-200';
+    }
+  };
+
+  const getCanvasBgClass = () => {
+    switch (themeMode) {
+      case 'high-contrast':
+        return 'bg-white border-4 border-black shadow-none';
+      case 'night':
+        return 'bg-slate-950 border-2 border-slate-700 shadow-inner';
+      case 'vibrant':
+        return 'bg-white border-2 border-amber-200 shadow-inner';
+      default:
+        return 'bg-[#FDFBF7] border border-slate-200 shadow-inner';
+    }
+  };
+
+  // Dynamic Text Size Class (guaranteed minimum 1rem / 16px)
+  const getTextSizeClass = () => {
+    switch (textSizeMode) {
+      case 'xlarge': // 75+ elderly mode
+        return 'text-xl leading-relaxed';
+      case 'large':
+        return 'text-lg leading-relaxed';
+      default:
+        return 'text-base leading-relaxed'; // 1rem minimum!
+    }
+  };
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6 animate-fade-in select-none">
-      {/* Top Header Banner */}
-      <div className="bg-gradient-to-r from-slate-700 via-teal-800 to-amber-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-wrap items-center justify-between gap-4">
-        <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-        
+    <div className="max-w-6xl mx-auto px-4 py-4 sm:py-6 space-y-6 select-none animate-fade-in">
+      {/* Top Header Banner with Accessibility Controls & High Contrast Support */}
+      <div
+        className={`rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-wrap items-center justify-between gap-4 ${
+          themeMode === 'high-contrast'
+            ? 'bg-black text-white border-4 border-amber-400'
+            : themeMode === 'night'
+            ? 'bg-slate-800 text-white border-2 border-slate-700'
+            : 'bg-gradient-to-r from-slate-800 via-teal-900 to-amber-800 text-white'
+        }`}
+      >
         <div className="flex items-center gap-4 relative z-10">
-          <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-3xl shadow-inner">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-3xl sm:text-4xl shadow-inner border border-white/20 shrink-0">
             🌿
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display drop-shadow-sm">
               {isTr ? 'Minik Geometrist Çocuk Odası' : 'Junior Geometer Playroom'}
             </h1>
-            <p className="text-white/90 text-sm font-medium">
-              {isTr ? 'Adım adım, kılavuzlar eşliğinde geometrik motifleri çiz!' : 'Draw geometric patterns step-by-step with clear guides!'}
+            <p className="text-white/90 text-base sm:text-lg font-medium mt-0.5">
+              {isTr
+                ? 'Kılavuzlar eşliğinde adım adım geometrik şekilleri keşfet!'
+                : 'Discover and draw geometric shapes step-by-step with clear guides!'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/30 shadow-inner">
-            <Star className="w-5 h-5 text-amber-300 fill-amber-300" />
-            <span className="font-extrabold text-lg">{stars} ⭐</span>
+        {/* Header Right Utility Controls */}
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 relative z-10">
+          {/* Stars Counter */}
+          <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/30 shadow-inner min-h-[44px]">
+            <Star className="w-6 h-6 text-amber-300 fill-amber-300" />
+            <span className="font-extrabold text-xl text-white">{stars} ⭐</span>
           </div>
 
+          {/* Quick Sound Toggle */}
           <button
             type="button"
-            onClick={onReturn}
-            className="px-4 py-2.5 rounded-2xl bg-white text-slate-800 hover:bg-slate-100 font-extrabold text-sm shadow-md transition transform hover:scale-105 cursor-pointer flex items-center gap-2"
+            onClick={() => {
+              setSfxEnabled(!sfxEnabled);
+              soundEffects.playDot();
+            }}
+            title={sfxEnabled ? (isTr ? 'Sesleri Kapat' : 'Mute Sounds') : (isTr ? 'Sesleri Aç' : 'Enable Sounds')}
+            className="p-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white border border-white/30 cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center transition"
           >
-            <Smile className="w-4 h-4 text-teal-700" />
+            {sfxEnabled ? <Volume2 className="w-5 h-5 text-amber-300" /> : <VolumeX className="w-5 h-5 text-white/60" />}
+          </button>
+
+          {/* Quick Ambient Music Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !bgMusicEnabled;
+              setBgMusicEnabled(next);
+            }}
+            title={bgMusicEnabled ? (isTr ? 'Müziği Durdur' : 'Stop Music') : (isTr ? 'Fon Müziğini Başlat' : 'Play Music')}
+            className={`p-3 rounded-2xl border cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center transition ${
+              bgMusicEnabled
+                ? 'bg-amber-400 text-slate-900 border-amber-300 font-bold shadow-md'
+                : 'bg-white/15 hover:bg-white/25 text-white border-white/30'
+            }`}
+          >
+            <Music className="w-5 h-5" />
+          </button>
+
+          {/* Theme Tweaker Button */}
+          <button
+            type="button"
+            onClick={() => setIsThemeTweakerOpen(true)}
+            title={isTr ? 'Görünüm, Ses & Yazı Boyutu' : 'Theme, Sound & Text Size'}
+            className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white border border-white/30 font-extrabold text-base cursor-pointer min-h-[44px] flex items-center gap-2 transition"
+          >
+            <Sliders className="w-5 h-5 text-amber-300" />
+            <span className="hidden sm:inline">{isTr ? 'Görünüm & Ayar' : 'Tweaker'}</span>
+          </button>
+
+          {/* Onboarding Tour Help Button */}
+          <button
+            type="button"
+            onClick={() => setIsOnboardingTourOpen(true)}
+            title={isTr ? 'Nasıl Oynanır? Başlangıç Rehberi' : 'How to Play Tour'}
+            className="p-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white border border-white/30 cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center transition"
+          >
+            <HelpCircle className="w-5 h-5 text-amber-300" />
+          </button>
+
+          {/* Safe Exit to Normal Mode (With Confirmation Guard) */}
+          <button
+            type="button"
+            onClick={() => setIsExitModalOpen(true)}
+            className="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-extrabold text-base shadow-md transition transform hover:scale-105 cursor-pointer min-h-[44px] flex items-center gap-2"
+          >
+            <Smile className="w-5 h-5 text-teal-800" />
             <span>{isTr ? 'Normal Mod' : 'Normal Mode'}</span>
           </button>
         </div>
       </div>
 
       {/* Main Activity Card */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xl grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className={`rounded-3xl p-6 sm:p-8 shadow-xl grid grid-cols-1 lg:grid-cols-12 gap-8 ${getThemeContainerClass()}`}>
         {/* Left Instruction Panel */}
         <div className="lg:col-span-5 flex flex-col justify-between space-y-6">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-800 px-3 py-1 rounded-full text-xs font-extrabold border border-teal-200">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isTr ? `Aşama ${step} / 20` : `Stage ${step} / 20`}</span>
+            {/* Step Counter Badge */}
+            <div className="inline-flex items-center gap-2 bg-teal-100 text-teal-900 px-4 py-1.5 rounded-full text-base font-extrabold border-2 border-teal-300">
+              <Sparkles className="w-4 h-4 text-teal-700" />
+              <span>{isTr ? `Bölüm ${step} / 20` : `Stage ${step} / 20`}</span>
             </div>
 
-            {/* Level Descriptions */}
-            {step === 1 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '1. Nokta Koyma' : '1. Placing a Dot'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Boş alana dokunarak kendi ilk noktanı oluştur.' : 'Click anywhere to place your first dot.'}</p>
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '2. Düz Çizgi' : '2. Drawing a Line'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'A noktasından B noktasına sürükleyerek düz çizgiyi çek.' : 'Drag from dot A to dot B.'}</p>
-              </>
-            )}
-            {step === 3 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '3. Üçgen Şekli' : '3. Triangle'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Köşeleri birbirine sürükleyerek üçgenin 3 kenarını tamamla.' : 'Drag between corners to draw 3 sides.'}</p>
-              </>
-            )}
-            {step === 4 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '4. Kare Kutusu' : '4. Square'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Köşeleri birleştirerek 4 kenarlı kareyi üret.' : 'Drag between corners to build a square.'}</p>
-              </>
-            )}
-            {step === 5 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '5. Dik Açı (90° Köşe)' : '5. Right Angle (90°)'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'A\'dan B\'ye ve B\'den C\'ye sürükleyerek dik L köşesini oluştur!' : 'Drag A->B and B->C to make a 90° angle!'}</p>
-              </>
-            )}
-            {step === 6 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '6. Düzgün Beşgen' : '6. Regular Pentagon'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '5 köşeyi sırayla birleştirerek düzgün beşgenini tamamla.' : 'Connect 5 corners to complete the pentagon.'}</p>
-              </>
-            )}
-            {step === 7 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '7. Düzgün Altıgen' : '7. Regular Hexagon'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '6 köşeyi birleştirerek arı kovanı motifli altıgeni üret.' : 'Connect 6 corners to form a hexagon.'}</p>
-              </>
-            )}
-            {step === 8 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '8. Düzgün Sekizgen' : '8. Regular Octagon'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '8 köşeyi sürükleyerek sekizgen madalyonunu çiz.' : 'Connect 8 corners to draw an octagon.'}</p>
-              </>
-            )}
-            {step === 9 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '9. Çember Dünyası' : '9. First Circle'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Merkezden dışarıya sürükleyerek çemberini büyüt.' : 'Drag outward from center point.'}</p>
-              </>
-            )}
-            {step === 10 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '10. Çember Kesişimi' : '10. Intersecting Circles'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Arka plandaki silik kılavuza uyarak B noktasından 2. çemberi çiz!' : 'Follow the faint background guide and draw 2nd circle at B!'}</p>
-              </>
-            )}
-            {step === 11 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '11. Çiçek Yaprakları (3\'lü Rosette)' : '11. Rosette Petals'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Silik kılavuz rehberliğinde 3 çiçek yaprağı çemberini ekle!' : 'Follow faint guide and add 3 petal circles!'}</p>
-              </>
-            )}
-            {step === 12 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '12. Altı Yapraklı Çiçek' : '12. 6-Petal Rosette'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Çevredeki 6 silik rehber noktaya dokunarak tam çiçeği açtır!' : 'Tap 6 guided points to bloom the 6-petal flower!'}</p>
-              </>
-            )}
-            {step === 13 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '13. Altı Köşeli Yıldız' : '13. Hexagram Star'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Noktaları kılavuza göre birleştirerek 6 köşeli yıldızı üret.' : 'Connect points along guide to draw a 6-point star.'}</p>
-              </>
-            )}
-            {step === 14 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '14. Baklava Motifi' : '14. Diamond Rhombus'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '4 elmas köşesini sürükleyerek baklava dilimini çiz.' : 'Drag 4 diamond corners.'}</p>
-              </>
-            )}
-            {step === 15 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '15. Selçuklu Yıldızı' : '15. Seljuk 8-Point Star'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'İki kare kesişimindeki 8 tepe noktasını birleştirip Selçuklu yıldızını üret!' : 'Connect 8 vertices to create Seljuk star!'}</p>
-              </>
-            )}
-            {step === 16 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '16. Selçuklu Çift Karesi' : '16. Overlapping Squares'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '45° dönmüş iki özdeş kareyi çizerek yıldız iskeletini kur!' : 'Draw two squares rotated 45°!'}</p>
-              </>
-            )}
-            {step === 17 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '17. Endülüs Çini Motifi' : '17. Andalusian Tile'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Kılavuz noktaları çapraz bağlayarak Endülüs saray çinisini tamamla.' : 'Connect diagonal guide nodes for Andalusian tile.'}</p>
-              </>
-            )}
-            {step === 18 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '18. İran Girih Düğümü' : '18. Persian Girih Knot'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Girih düğüm noktalarını sürükleyerek 5\'li düğüm yıldızını çiz!' : 'Connect girih knot points!'}</p>
-              </>
-            )}
-            {step === 19 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '19. Japon Kumiko Desen' : '19. Japanese Kumiko'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? 'Merkezden dışa kenevir yaprağı (Asanoha) ahşap motifini çiz.' : 'Draw Kumiko Asanoha hemp leaf pattern.'}</p>
-              </>
-            )}
-            {step === 20 && (
-              <>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800">{isTr ? '20. Saray Taç Kapı Yıldızı 🏆' : '20. Royal Portal Star 🏆'}</h2>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">{isTr ? '12 köşeli muhteşem saray motifini tamamla ve Geometri Tacını Kazan!' : 'Complete the 12-point royal star and win the Geometer Crown!'}</p>
-              </>
-            )}
+            {/* Stage Title and Large Instructions */}
+            <div className="space-y-2">
+              {step === 1 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '1. İlk Noktanı Koy' : '1. Placing a Dot'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Çizim alanına parmağınla veya farenle bir kez dokunarak ilk geometri noktanı oluştur.'
+                      : 'Click or tap anywhere on the canvas to place your first dot.'}
+                  </p>
+                </>
+              )}
+              {step === 2 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '2. Düz Çizgi Çekme' : '2. Drawing a Line'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'A noktasından tutup B noktasına doğru sürükleyerek cetvel çizgisi çek.'
+                      : 'Drag from dot A to dot B to draw a straight line.'}
+                  </p>
+                </>
+              )}
+              {step === 3 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '3. Üçgen Şekli (3 Kenar)' : '3. Triangle'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Köşeleri birbirine sürükleyerek üçgenin 3 kenarını tamamla.'
+                      : 'Drag between corners to connect the 3 sides of the triangle.'}
+                  </p>
+                </>
+              )}
+              {step === 4 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '4. Kare Kutusu (4 Kenar)' : '4. Square'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '4 köşeyi birbirine bağlayarak eşit kenarlı kareyi üret.'
+                      : 'Connect the 4 corners to build a square.'}
+                  </p>
+                </>
+              )}
+              {step === 5 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '5. Dik Açı (90° Köşe)' : '5. Right Angle (90°)'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? "A'dan B'ye ve B'den C'ye sürükleyerek 90 derecelik dik köşeyi çiz."
+                      : 'Drag A->B and B->C to form a 90° right angle.'}
+                  </p>
+                </>
+              )}
+              {step === 6 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '6. Düzgün Beşgen' : '6. Regular Pentagon'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '5 köşeyi sırayla birleştirerek düzgün beşgenini tamamla.'
+                      : 'Connect the 5 corners in sequence to complete the pentagon.'}
+                  </p>
+                </>
+              )}
+              {step === 7 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '7. Düzgün Altıgen' : '7. Regular Hexagon'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Arı kovanı peteği gibi 6 köşeyi sürükleyerek altıgeni tamamla.'
+                      : 'Connect 6 corners to form a honeycomb hexagon.'}
+                  </p>
+                </>
+              )}
+              {step === 8 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '8. Düzgün Sekizgen' : '8. Regular Octagon'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '8 köşeyi sürükleyerek sekizgen madalyonunu ortaya çıkar.'
+                      : 'Connect 8 corners to reveal the regular octagon.'}
+                  </p>
+                </>
+              )}
+              {step === 9 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '9. Çember Dünyası' : '9. First Compass Circle'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Merkez noktadan dışarıya doğru sürükleyerek pergel çemberini büyüt.'
+                      : 'Drag outward from center point to open your compass circle.'}
+                  </p>
+                </>
+              )}
+              {step === 10 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '10. İki Çember Kesişimi' : '10. Intersecting Circles'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Arka plandaki silik kılavuza uyarak B noktasından 2. çemberi çiz.'
+                      : 'Follow the faint guide and drag from point B to draw the 2nd circle.'}
+                  </p>
+                </>
+              )}
+              {step === 11 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? "11. Çiçek Yaprakları (3'lü Rosette)" : '11. Rosette Petals'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Çember üzerindeki 3 silik kılavuz noktaya dokunarak çiçek yapraklarını tek tek açtır!'
+                      : 'Tap on the 3 guided points on the circle circumference to bloom each petal!'}
+                  </p>
+                </>
+              )}
+              {step === 12 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '12. Altı Yapraklı Tam Çiçek' : '12. 6-Petal Rosette Flower'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Çember çevresindeki 6 kılavuz noktaya dokunarak tam çiçeği açtır!'
+                      : 'Tap each of the 6 guided points on the circle circumference to bloom all petals!'}
+                  </p>
+                </>
+              )}
+              {step === 13 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '13. Altı Köşeli Yıldız' : '13. Hexagram Star'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'İki ters üçgeni birleştirerek 6 köşeli geometri yıldızını çiz.'
+                      : 'Connect corners along the guide to create a 6-point star.'}
+                  </p>
+                </>
+              )}
+              {step === 14 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '14. Baklava Motifi (Rhombus)' : '14. Diamond Rhombus'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '4 elmas köşesini birleştirerek baklava dilimi motifini çiz.'
+                      : 'Connect 4 diamond points to form the rhombus tile.'}
+                  </p>
+                </>
+              )}
+              {step === 15 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '15. Selçuklu Çift Karesi (Temel İskelet)' : '15. Seljuk Double Squares'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Biri düz, diğeri 45° dönmüş iki özdeş kareyi çizerek 8 köşeli yıldızın temel iskeletini kur!'
+                      : 'Draw two squares (one straight, one rotated 45°) to create the 8-point geometric skeleton!'}
+                  </p>
+                </>
+              )}
+              {step === 16 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '16. Tarihi Selçuklu 8 Köşeli Yıldızı' : '16. Authentic Seljuk 8-Point Star'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '8 yıldız tepe noktasını çapraz ışınlarla birleştirerek Selçuklu saraylarının görkemli yıldız motifini üret!'
+                      : 'Connect the 8 peak vertices across the circle to create the magnificent Seljuk octagram star motif!'}
+                  </p>
+                </>
+              )}
+              {step === 17 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '17. Endülüs Çini Deseni' : '17. Andalusian Tile'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Kılavuz çizgileri takip ederek Endülüs saray çinisinin 8 kenarlı köşeli yıldızını tamamla.'
+                      : 'Follow the guide lines to connect the Andalusian palace star tile.'}
+                  </p>
+                </>
+              )}
+              {step === 18 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '18. İran Girih Düğüm Yıldızı (5 Köşeli)' : '18. Persian Girih Pentagram Star'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '1 → 3 → 5 → 2 → 4 → 1 sırasıyla noktaları birleştirerek 5 köşeli düğüm yıldızını çiz!'
+                      : 'Connect vertices in order 1 → 3 → 5 → 2 → 4 → 1 to draw the 5-point Girih knot star!'}
+                  </p>
+                </>
+              )}
+              {step === 19 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                    {isTr ? '19. Japon Kumiko Kenevir Yaprağı' : '19. Japanese Kumiko'}
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? 'Merkezden dış köşelere uzanan geleneksel ahşap Kumiko motifini çiz.'
+                      : 'Draw the traditional Japanese Kumiko Asanoha leaf pattern.'}
+                  </p>
+                </>
+              )}
+              {step === 20 && (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 flex items-center gap-2">
+                    <span>{isTr ? '20. Saray Taç Kapı Yıldızı' : '20. Royal Portal Star'}</span>
+                    <Award className="w-8 h-8 text-amber-500" />
+                  </h2>
+                  <p className={`text-slate-700 font-medium ${getTextSizeClass()}`}>
+                    {isTr
+                      ? '12 köşeli taç kapı yıldızı 4 adet eşkenar üçgenden oluşur (1-5-9, 2-6-10, 3-7-11, 4-8-12). Kılavuz üçgenleri sırayla tamamla ve Geometri Tacını Kazan!'
+                      : 'The 12-point portal star is made of 4 equilateral triangles (1-5-9, 2-6-10, 3-7-11, 4-8-12). Complete each guided triangle to claim your crown!'}
+                  </p>
+                </>
+              )}
+            </div>
 
-            {/* Color Palette Picker */}
-            <div className="pt-3 pb-1">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                {isTr ? 'Kalem Rengi' : 'Pencil Color'}
-              </span>
-              <div className="flex items-center gap-2.5 mt-1">
-                {calmColors.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setActiveColor(c)}
-                    className={`w-8 h-8 rounded-full transition transform hover:scale-110 cursor-pointer shadow-sm ${
-                      activeColor === c ? 'ring-3 ring-offset-2 ring-slate-700 scale-110' : ''
-                    }`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
+            {/* Custom Color Palette & Custom Shade Generator */}
+            <div className="pt-2">
+              <ColorPaletteBuilder
+                activeColor={activeColor}
+                onSelectColor={(c) => setActiveColor(c)}
+                customColors={customColors}
+                onAddCustomColor={(c) => setCustomColors((prev) => [...prev, c])}
+              />
             </div>
           </div>
 
           {/* Action Toolbar & Navigation Controls */}
-          <div className="space-y-3 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2">
+          <div className="space-y-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-3">
+              {/* Reliable Undo Button */}
               <button
                 type="button"
-                onClick={handleUndoStep}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 hover:bg-amber-100 cursor-pointer"
-                title="Son çizgiyi geri al"
+                onClick={handleUndo}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-100 text-amber-950 font-bold text-base border-2 border-amber-300 hover:bg-amber-200 cursor-pointer min-h-[44px] transition"
+                title={isTr ? 'Son çizgiyi geri al' : 'Undo last line'}
               >
-                <Undo2 className="w-3.5 h-3.5" />
+                <Undo2 className="w-5 h-5 text-amber-800" />
                 <span>{isTr ? 'Geri Al' : 'Undo'}</span>
               </button>
+
+              {/* Reset Current Step */}
               <button
                 type="button"
-                onClick={handleResetStep}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200 hover:bg-slate-200 cursor-pointer"
-                title="Bu adımı sıfırla"
+                onClick={handleResetCurrentStep}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-100 text-slate-800 font-bold text-base border-2 border-slate-300 hover:bg-slate-200 cursor-pointer min-h-[44px] transition"
+                title={isTr ? 'Bu adımı sıfırla' : 'Reset this stage'}
               >
-                <RefreshCcw className="w-3.5 h-3.5" />
+                <RefreshCcw className="w-5 h-5 text-slate-700" />
                 <span>{isTr ? 'Sıfırla' : 'Reset'}</span>
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
+            {/* Step Navigation: Back & Next Buttons */}
+            <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={handlePrev}
                 disabled={step === 1}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold text-sm disabled:opacity-40 cursor-pointer"
+                className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-base disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer min-h-[44px] transition"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>{isTr ? 'Önceki' : 'Back'}</span>
+                <ArrowLeft className="w-5 h-5" />
+                <span>{isTr ? 'Önceki Bölüm' : 'Back'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={
-                  (step === 1 && !dot1) ||
-                  (step === 2 && !lineCompleted) ||
-                  (step === 9 && !circleCompleted) ||
-                  (step === 10 && !circle2Completed) ||
-                  (step === 11 && petals3Count < 3) ||
-                  (step === 12 && petals6Count < 6) ||
-                  Boolean(stageCfg && drawnLines.length < stageCfg.edges.length)
-                }
-                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-teal-800 text-white hover:bg-teal-900 font-extrabold text-sm shadow-md transform hover:scale-105 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={!isCurrentStepReadyToAdvance}
+                className="flex items-center gap-2.5 px-7 py-3.5 rounded-2xl bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-base shadow-lg shadow-teal-900/20 transform hover:scale-105 transition cursor-pointer min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
               >
-                <span>{isTr ? 'Sonraki Adım' : 'Next Step'}</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>{step === 20 ? (isTr ? 'Tacı Kazan 🏆' : 'Win Crown 🏆') : isTr ? 'Sonraki Bölüm' : 'Next Stage'}</span>
+                <ArrowRight className="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
 
         {/* Right Interactive Canvas Area */}
-        <div className="lg:col-span-7 bg-[#FDFBF7] border border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center relative min-h-[420px] overflow-hidden shadow-inner select-none">
-          
+        <div
+          className={`lg:col-span-7 rounded-3xl p-4 sm:p-6 flex flex-col items-center justify-center relative min-h-[460px] sm:min-h-[500px] overflow-hidden select-none ${getCanvasBgClass()}`}
+        >
           {/* STEP 1: Place 1 Dot */}
           {step === 1 && (
-            <div className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative cursor-crosshair shadow-2xs">
+            <div className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative cursor-crosshair shadow-sm">
               <svg
                 ref={svgRef}
                 viewBox="0 0 400 400"
                 className="w-full h-full"
                 onPointerDown={(e) => {
                   const coords = getSvgCoordinates(e);
-                  setDot1({ x: coords.x, y: coords.y, color: activeColor });
+                  soundEffects.playDot();
+                  updateCurrentStepState((prev) => ({
+                    ...prev,
+                    dot1: { x: coords.x, y: coords.y, color: activeColor },
+                  }));
                   setStars(10);
-                  triggerConfetti();
+                  triggerStepCompletionCelebration(1);
                 }}
               >
-                {!dot1 ? (
+                {!currentStepState.dot1 ? (
                   <g pointerEvents="none">
-                    <circle cx="200" cy="200" r="24" fill="#F1F5F9" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="4 4" />
-                    <text x="200" y="204" textAnchor="middle" fill="#64748B" fontSize="13" fontWeight="bold">
+                    <circle cx="200" cy="200" r="30" fill="#F1F5F9" stroke="#94A3B8" strokeWidth="2.5" strokeDasharray="5 5" />
+                    <text x="200" y="206" textAnchor="middle" fill="#334155" fontSize="16" fontWeight="bold">
                       {isTr ? 'Dokun' : 'Tap'}
                     </text>
                   </g>
                 ) : (
                   <g pointerEvents="none">
-                    <circle cx={dot1.x} cy={dot1.y} r="12" fill="#334155" stroke="white" strokeWidth="3" />
-                    <text x={dot1.x} y={dot1.y - 20} textAnchor="middle" fill="#334155" fontSize="12" fontWeight="bold">
+                    <circle
+                      cx={currentStepState.dot1.x}
+                      cy={currentStepState.dot1.y}
+                      r={strokeWidth * 2.5 + 6}
+                      fill={currentStepState.dot1.color}
+                      stroke="white"
+                      strokeWidth="3.5"
+                    />
+                    <text
+                      x={currentStepState.dot1.x}
+                      y={currentStepState.dot1.y - 24}
+                      textAnchor="middle"
+                      fill="#0F172A"
+                      fontSize="16"
+                      fontWeight="bold"
+                    >
                       {isTr ? 'Nokta Oluştu!' : 'Dot Created!'} ✨
                     </text>
                   </g>
                 )}
               </svg>
-            </div>
-          )}
-
-          {/* STEP 2: Drag Line */}
-          {step === 2 && (
-            <div className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative shadow-2xs">
-              <svg
-                ref={svgRef}
-                viewBox="0 0 400 400"
-                className="w-full h-full cursor-crosshair"
-                onPointerDown={(e) => {
-                  if (lineCompleted) return;
-                  const coords = getSvgCoordinates(e);
-                  if (Math.hypot(coords.x - lineStart.x, coords.y - lineStart.y) <= 40) {
-                    setIsDrawingLine(true);
-                    setCurrentLineDrag(coords);
-                  }
-                }}
-                onPointerMove={(e) => {
-                  if (!isDrawingLine || lineCompleted) return;
-                  const coords = getSvgCoordinates(e);
-                  setCurrentLineDrag(coords);
-                }}
-                onPointerUp={(e) => {
-                  if (!isDrawingLine || lineCompleted) return;
-                  setIsDrawingLine(false);
-                  const coords = getSvgCoordinates(e);
-                  if (Math.hypot(coords.x - lineEnd.x, coords.y - lineEnd.y) <= 45) {
-                    setLineCompleted(true);
-                    setLineColor(activeColor);
-                    setStars(20);
-                    triggerConfetti();
-                  }
-                  setCurrentLineDrag(null);
-                }}
-              >
-                <line x1={lineStart.x} y1={lineStart.y} x2={lineEnd.x} y2={lineEnd.y} stroke="#CBD5E1" strokeWidth="4" strokeDasharray="6 6" />
-                {lineCompleted && (
-                  <line x1={lineStart.x} y1={lineStart.y} x2={lineEnd.x} y2={lineEnd.y} stroke={lineColor} strokeWidth="5" strokeLinecap="round" />
-                )}
-                {isDrawingLine && currentLineDrag && !lineCompleted && (
-                  <line x1={lineStart.x} y1={lineStart.y} x2={currentLineDrag.x} y2={currentLineDrag.y} stroke={activeColor} strokeWidth="4" strokeDasharray="4 4" />
-                )}
-                <circle cx={lineStart.x} cy={lineStart.y} r="12" fill="#334155" stroke="white" strokeWidth="3" />
-                <text x={lineStart.x} y={lineStart.y + 4} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold" pointerEvents="none">A</text>
-
-                <circle cx={lineEnd.x} cy={lineEnd.y} r="12" fill="#334155" stroke="white" strokeWidth="3" />
-                <text x={lineEnd.x} y={lineEnd.y + 4} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold" pointerEvents="none">B</text>
-              </svg>
-              <div className="absolute bottom-4 text-center pointer-events-none text-xs font-bold text-slate-500">
-                {lineCompleted ? (
-                  <span className="text-emerald-600 flex items-center gap-1 justify-center"><CheckCircle className="w-4 h-4" /> {isTr ? 'Harika Çizgi!' : 'Great Line!'}</span>
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {currentStepState.dot1 ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? 'Harika! Sonraki bölüme geçebilirsin.' : 'Great! Ready for next stage.'}</span>
+                  </span>
                 ) : (
-                  <span>{isTr ? 'A noktasından tutup B noktasına sürükle' : 'Drag from A to B'}</span>
+                  <span>{isTr ? 'Ekranda dilediğin yere dokun' : 'Tap anywhere on the canvas'}</span>
                 )}
               </div>
             </div>
           )}
 
-          {/* STAGES WITH STAGE CONFIG (3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18, 19, 20) */}
+          {/* STEP 2: Drag Line */}
+          {step === 2 && (
+            <div className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative shadow-sm">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 400 400"
+                className="w-full h-full cursor-crosshair"
+                onPointerDown={(e) => {
+                  if (currentStepState.lineCompleted) return;
+                  const coords = getSvgCoordinates(e);
+                  if (Math.hypot(coords.x - lineStart.x, coords.y - lineStart.y) <= 48) {
+                    soundEffects.playDot();
+                    setIsDrawingLine2(true);
+                    setCurrentLine2Drag(coords);
+                  }
+                }}
+                onPointerMove={(e) => {
+                  if (!isDrawingLine2 || currentStepState.lineCompleted) return;
+                  const coords = getSvgCoordinates(e);
+                  setCurrentLine2Drag(coords);
+                }}
+                onPointerUp={(e) => {
+                  if (!isDrawingLine2 || currentStepState.lineCompleted) return;
+                  setIsDrawingLine2(false);
+                  const coords = getSvgCoordinates(e);
+                  if (Math.hypot(coords.x - lineEnd.x, coords.y - lineEnd.y) <= 50) {
+                    soundEffects.playLineSnap();
+                    updateCurrentStepState((prev) => ({
+                      ...prev,
+                      lineCompleted: true,
+                    }));
+                    setStars(20);
+                    triggerStepCompletionCelebration(2);
+                  }
+                  setCurrentLine2Drag(null);
+                }}
+              >
+                <line
+                  x1={lineStart.x}
+                  y1={lineStart.y}
+                  x2={lineEnd.x}
+                  y2={lineEnd.y}
+                  stroke="#94A3B8"
+                  strokeWidth="4"
+                  strokeDasharray="6 6"
+                  opacity="0.6"
+                />
+
+                {currentStepState.lineCompleted && (
+                  <line
+                    x1={lineStart.x}
+                    y1={lineStart.y}
+                    x2={lineEnd.x}
+                    y2={lineEnd.y}
+                    stroke={activeColor}
+                    strokeWidth={strokeWidth}
+                    strokeLinecap="round"
+                  />
+                )}
+
+                {isDrawingLine2 && currentLine2Drag && !currentStepState.lineCompleted && (
+                  <line
+                    x1={lineStart.x}
+                    y1={lineStart.y}
+                    x2={currentLine2Drag.x}
+                    y2={currentLine2Drag.y}
+                    stroke={activeColor}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray="5 5"
+                  />
+                )}
+
+                <circle cx={lineStart.x} cy={lineStart.y} r="16" fill="#1E293B" stroke="white" strokeWidth="3" />
+                <text x={lineStart.x} y={lineStart.y + 5} textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" pointerEvents="none">
+                  A
+                </text>
+
+                <circle cx={lineEnd.x} cy={lineEnd.y} r="16" fill="#1E293B" stroke="white" strokeWidth="3" />
+                <text x={lineEnd.x} y={lineEnd.y + 5} textAnchor="middle" fill="white" fontSize="13" fontWeight="bold" pointerEvents="none">
+                  B
+                </text>
+              </svg>
+
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {currentStepState.lineCompleted ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? 'Harika Çizgi! Çizgi tamamlandı.' : 'Great straight line!'}</span>
+                  </span>
+                ) : (
+                  <span>{isTr ? "A noktasından tutup B noktasına doğru sürükle" : 'Drag from A to B'}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STAGES WITH CONFIG: 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18, 19, 20 */}
           {stageCfg && (
-            <div className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative shadow-2xs">
+            <div className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative shadow-sm">
               <svg
                 ref={svgRef}
                 viewBox="0 0 400 400"
@@ -695,6 +1588,7 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
                   const coords = getSvgCoordinates(e);
                   const startV = findClosestVertex(coords, stageCfg.vertices);
                   if (startV) {
+                    soundEffects.playDot();
                     setActiveStart(startV.id);
                     setDragCurrent(coords);
                   }
@@ -710,11 +1604,12 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
                   const endV = findClosestVertex(coords, stageCfg.vertices);
 
                   if (endV && endV.id !== activeStart) {
-                    const startV = stageCfg.vertices.find(v => v.id === activeStart)!;
+                    const startV = stageCfg.vertices.find((v) => v.id === activeStart)!;
                     const edgeKey = getEdgeKey(activeStart, endV.id);
 
-                    const exists = drawnLines.some(l => getEdgeKey(l.from, l.to) === edgeKey);
+                    const exists = drawnLines.some((l) => getEdgeKey(l.from, l.to) === edgeKey);
                     if (!exists && stageCfg.edges.includes(edgeKey)) {
+                      soundEffects.playLineSnap();
                       const newLine: DrawnLine = {
                         id: `line-${Date.now()}`,
                         from: startV.id,
@@ -723,13 +1618,18 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
                         y1: startV.y,
                         x2: endV.x,
                         y2: endV.y,
-                        color: activeColor
+                        color: activeColor,
+                        width: strokeWidth,
                       };
                       const updated = [...drawnLines, newLine];
-                      setDrawnLines(updated);
+                      updateCurrentStepState((prev) => ({
+                        ...prev,
+                        drawnLines: updated,
+                      }));
+
                       if (updated.length === stageCfg.edges.length) {
                         setStars(step * 15);
-                        triggerConfetti();
+                        triggerStepCompletionCelebration(step);
                       }
                     }
                   }
@@ -738,39 +1638,121 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
                   setDragCurrent(null);
                 }}
               >
-                {/* Low opacity faint background guide */}
+                {/* Background target guide */}
                 {stageCfg.polygonSvg}
 
-                {/* Already Drawn Lines */}
+                {/* Already Drawn Lines strictly belonging to this stage */}
                 {drawnLines.map((line) => (
-                  <line key={line.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth="5" strokeLinecap="round" />
+                  <line
+                    key={line.id}
+                    x1={line.x1}
+                    y1={line.y1}
+                    x2={line.x2}
+                    y2={line.y2}
+                    stroke={line.color}
+                    strokeWidth={line.width || strokeWidth}
+                    strokeLinecap="round"
+                  />
                 ))}
 
-                {/* Live Drag Preview Line (1:1 Cursor Precision) */}
+                {/* Live Drag Preview Line */}
                 {activeStart && dragCurrent && (() => {
-                  const startV = stageCfg.vertices.find(v => v.id === activeStart);
+                  const startV = stageCfg.vertices.find((v) => v.id === activeStart);
                   if (!startV) return null;
                   return (
-                    <line x1={startV.x} y1={startV.y} x2={dragCurrent.x} y2={dragCurrent.y} stroke={activeColor} strokeWidth="4" strokeDasharray="4 4" />
+                    <line
+                      x1={startV.x}
+                      y1={startV.y}
+                      x2={dragCurrent.x}
+                      y2={dragCurrent.y}
+                      stroke={activeColor}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray="5 5"
+                    />
                   );
                 })()}
 
-                {/* Neutral Vertex Points */}
-                {stageCfg.vertices.map((p) => (
-                  <g key={p.id} pointerEvents="none">
-                    <circle cx={p.x} cy={p.y} r="12" fill="#334155" stroke="white" strokeWidth="3" />
-                    <text x={p.x} y={p.y + 4} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">
-                      {p.label}
-                    </text>
-                  </g>
-                ))}
+                {/* Step 18 & 20 Next Move Pulse Arrow & Halo */}
+                {(() => {
+                  const activeNextMove = step === 18 ? nextStep18Move : step === 20 ? nextStep20Move : null;
+                  if (!activeNextMove) return null;
+                  const vFrom = stageCfg.vertices.find((v) => v.id === activeNextMove.from);
+                  const vTo = stageCfg.vertices.find((v) => v.id === activeNextMove.to);
+                  if (!vFrom || !vTo) return null;
+                  return (
+                    <g pointerEvents="none">
+                      <circle
+                        cx={vFrom.x}
+                        cy={vFrom.y}
+                        r="24"
+                        fill="none"
+                        stroke="#F59E0B"
+                        strokeWidth="2.5"
+                        strokeDasharray="4 4"
+                        className="animate-spin"
+                        style={{ transformOrigin: `${vFrom.x}px ${vFrom.y}px` }}
+                      />
+                      <line
+                        x1={vFrom.x}
+                        y1={vFrom.y}
+                        x2={vTo.x}
+                        y2={vTo.y}
+                        stroke="#F59E0B"
+                        strokeWidth="2.5"
+                        strokeDasharray="4 4"
+                        opacity="0.8"
+                      />
+                    </g>
+                  );
+                })()}
+
+                {/* Neutral High-Contrast Vertex Markers */}
+                {stageCfg.vertices.map((p) => {
+                  const activeNextMove = step === 18 ? nextStep18Move : step === 20 ? nextStep20Move : null;
+                  const isNextStart = activeNextMove?.from === p.id;
+                  const isNextEnd = activeNextMove?.to === p.id;
+                  return (
+                    <g key={p.id} pointerEvents="none">
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={isNextStart || isNextEnd ? '17' : '15'}
+                        fill={isNextStart ? '#087D86' : isNextEnd ? '#D97706' : '#0F172A'}
+                        stroke="white"
+                        strokeWidth="3"
+                      />
+                      <text x={p.x} y={p.y + 5} textAnchor="middle" fill="white" fontSize="12" fontWeight="bold">
+                        {p.label}
+                      </text>
+                    </g>
+                  );
+                })}
               </svg>
 
-              <div className="mt-2 text-xs font-bold text-slate-600 pointer-events-none">
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700 px-3">
                 {drawnLines.length === stageCfg.edges.length ? (
-                  <span className="text-emerald-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> {isTr ? 'Şekil Tamamlandı!' : 'Shape Completed!'}</span>
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? 'Şekil Tamamlandı!' : 'Shape Completed!'}</span>
+                  </span>
+                ) : step === 18 && nextStep18Move ? (
+                  <span className="text-amber-800 bg-amber-50 px-3 py-1 rounded-xl border border-amber-300 shadow-2xs font-extrabold text-sm sm:text-base">
+                    {isTr
+                      ? `Sıradaki: ${nextStep18Move.fromLabel} noktasından ${nextStep18Move.toLabel} noktasına sürükle (${drawnLines.length}/5)`
+                      : `Next: Drag from ${nextStep18Move.fromLabel} to ${nextStep18Move.toLabel} (${drawnLines.length}/5)`}
+                  </span>
+                ) : step === 20 && nextStep20Move ? (
+                  <span className="text-amber-800 bg-amber-50 px-3 py-1 rounded-xl border border-amber-300 shadow-2xs font-extrabold text-sm sm:text-base">
+                    {isTr
+                      ? `Sıradaki: ${nextStep20Move.group} için ${nextStep20Move.fromLabel}'den ${nextStep20Move.toLabel}'e sürükle (${drawnLines.length}/12)`
+                      : `Next: For ${nextStep20Move.group}, drag ${nextStep20Move.fromLabel} to ${nextStep20Move.toLabel} (${drawnLines.length}/12)`}
+                  </span>
                 ) : (
-                  <span>{isTr ? `Köşeleri birbirine sürükle (${drawnLines.length}/${stageCfg.edges.length} kenar)` : `Drag between corners (${drawnLines.length}/${stageCfg.edges.length} sides)`}</span>
+                  <span>
+                    {isTr
+                      ? `Köşeleri birbirine sürükle (${drawnLines.length}/${stageCfg.edges.length} kenar)`
+                      : `Drag between corners (${drawnLines.length}/${stageCfg.edges.length} sides)`}
+                  </span>
                 )}
               </div>
             </div>
@@ -779,34 +1761,54 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
           {/* STEP 9: Circle */}
           {step === 9 && (
             <div
-              className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative cursor-crosshair shadow-2xs"
-              onPointerDown={() => setIsDrawingCircle(true)}
+              className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative cursor-crosshair shadow-sm"
+              onPointerDown={() => {
+                if (currentStepState.circleCompleted) return;
+                soundEffects.playDot();
+                setIsDrawingCircle9(true);
+              }}
               onPointerMove={(e) => {
-                if (!isDrawingCircle || circleCompleted) return;
+                if (!isDrawingCircle9 || currentStepState.circleCompleted) return;
                 const coords = getSvgCoordinates(e);
                 const r = Math.hypot(coords.x - 200, coords.y - 200);
-                setCircleRadius(Math.min(Math.max(r, 20), 140));
+                updateCurrentStepState((prev) => ({
+                  ...prev,
+                  circleRadius: Math.min(Math.max(r, 20), 140),
+                }));
               }}
               onPointerUp={() => {
-                if (!isDrawingCircle || circleCompleted) return;
-                setIsDrawingCircle(false);
-                if (circleRadius > 50) {
-                  setCircleCompleted(true);
+                if (!isDrawingCircle9 || currentStepState.circleCompleted) return;
+                setIsDrawingCircle9(false);
+                if ((currentStepState.circleRadius ?? 0) > 60) {
+                  updateCurrentStepState((prev) => ({
+                    ...prev,
+                    circleCompleted: true,
+                  }));
                   setStars(80);
-                  triggerConfetti();
+                  triggerStepCompletionCelebration(9);
                 }
               }}
             >
               <svg ref={svgRef} viewBox="0 0 400 400" className="w-full h-full pointer-events-none">
-                {/* Low opacity target guide */}
-                <circle cx="200" cy="200" r="100" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="4 4" />
-                
-                <circle cx="200" cy="200" r={circleRadius || 40} fill={circleCompleted ? `${activeColor}22` : "none"} stroke={activeColor} strokeWidth={circleCompleted ? "4" : "2"} strokeDasharray={circleCompleted ? undefined : "4 4"} />
-                <circle cx="200" cy="200" r="6" fill="#334155" />
+                <circle cx="200" cy="200" r="100" fill="none" stroke="#94A3B8" strokeWidth="3" strokeDasharray="6 6" opacity="0.6" />
+
+                <circle
+                  cx="200"
+                  cy="200"
+                  r={currentStepState.circleRadius || 40}
+                  fill={currentStepState.circleCompleted ? `${activeColor}22` : 'none'}
+                  stroke={activeColor}
+                  strokeWidth={currentStepState.circleCompleted ? strokeWidth : 3}
+                  strokeDasharray={currentStepState.circleCompleted ? undefined : '5 5'}
+                />
+                <circle cx="200" cy="200" r="8" fill="#0F172A" />
               </svg>
-              <div className="absolute bottom-4 text-center pointer-events-none text-xs font-bold text-slate-500">
-                {circleCompleted ? (
-                  <span className="text-emerald-600 flex items-center gap-1 justify-center"><CheckCircle className="w-4 h-4" /> {isTr ? 'Çember Tamamlandı!' : 'Circle Completed!'}</span>
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {currentStepState.circleCompleted ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? 'Çember Tamamlandı!' : 'Circle Completed!'}</span>
+                  </span>
                 ) : (
                   <span>{isTr ? 'Merkezden dışarıya doğru sürükleyerek çemberi büyüt' : 'Drag outward from center'}</span>
                 )}
@@ -814,44 +1816,64 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
             </div>
           )}
 
-          {/* STEP 10: Two Overlapping Circles (With Clear Faint Target Guide) */}
+          {/* STEP 10: Two Overlapping Circles */}
           {step === 10 && (
             <div
-              className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative shadow-2xs cursor-crosshair"
-              onPointerDown={() => setIsDrawingCircle2(true)}
+              className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative shadow-sm cursor-crosshair"
+              onPointerDown={() => {
+                if (currentStepState.circle2Completed) return;
+                soundEffects.playDot();
+                setIsDrawingCircle10(true);
+              }}
               onPointerMove={(e) => {
-                if (!isDrawingCircle2 || circle2Completed) return;
+                if (!isDrawingCircle10 || currentStepState.circle2Completed) return;
                 const coords = getSvgCoordinates(e);
                 const r = Math.hypot(coords.x - 290, coords.y - 200);
-                setCircle2Radius(Math.min(Math.max(r, 20), 110));
+                updateCurrentStepState((prev) => ({
+                  ...prev,
+                  circle2Radius: Math.min(Math.max(r, 20), 110),
+                }));
               }}
               onPointerUp={() => {
-                if (!isDrawingCircle2 || circle2Completed) return;
-                setIsDrawingCircle2(false);
-                if (circle2Radius > 50) {
-                  setCircle2Completed(true);
+                if (!isDrawingCircle10 || currentStepState.circle2Completed) return;
+                setIsDrawingCircle10(false);
+                if ((currentStepState.circle2Radius ?? 0) > 60) {
+                  updateCurrentStepState((prev) => ({
+                    ...prev,
+                    circle2Completed: true,
+                  }));
                   setStars(95);
-                  triggerConfetti();
+                  triggerStepCompletionCelebration(10);
                 }
               }}
             >
               <svg ref={svgRef} viewBox="0 0 400 400" className="w-full h-full pointer-events-none">
-                {/* First Base Circle */}
-                <circle cx="200" cy="200" r="90" fill="none" stroke="#3A6B5C" strokeWidth="3" />
-                <circle cx="200" cy="200" r="5" fill="#334155" />
+                <circle cx="200" cy="200" r="90" fill="none" stroke="#3A6B5C" strokeWidth="3.5" />
+                <circle cx="200" cy="200" r="6" fill="#0F172A" />
 
-                {/* Low opacity faint target guide for 2nd circle */}
-                <circle cx="290" cy="200" r="90" fill="none" stroke="#CBD5E1" strokeWidth="2.5" strokeDasharray="4 4" />
+                <circle cx="290" cy="200" r="90" fill="none" stroke="#94A3B8" strokeWidth="3" strokeDasharray="6 6" opacity="0.6" />
 
-                <circle cx="290" cy="200" r="7" fill="#D4A373" stroke="white" strokeWidth="2" />
-                <text x="290" y="180" textAnchor="middle" fill="#334155" fontSize="11" fontWeight="bold">B</text>
+                <circle cx="290" cy="200" r="9" fill="#D4A373" stroke="white" strokeWidth="2.5" />
+                <text x="290" y="178" textAnchor="middle" fill="#0F172A" fontSize="13" fontWeight="bold">
+                  B
+                </text>
 
-                {/* Second Compass Circle */}
-                <circle cx="290" cy="200" r={circle2Radius || 30} fill={circle2Completed ? `${activeColor}22` : "none"} stroke={activeColor} strokeWidth={circle2Completed ? "4" : "2"} strokeDasharray={circle2Completed ? undefined : "4 4"} />
+                <circle
+                  cx="290"
+                  cy="200"
+                  r={currentStepState.circle2Radius || 30}
+                  fill={currentStepState.circle2Completed ? `${activeColor}22` : 'none'}
+                  stroke={activeColor}
+                  strokeWidth={currentStepState.circle2Completed ? strokeWidth : 3}
+                  strokeDasharray={currentStepState.circle2Completed ? undefined : '5 5'}
+                />
               </svg>
-              <div className="absolute bottom-4 text-center pointer-events-none text-xs font-bold text-slate-500">
-                {circle2Completed ? (
-                  <span className="text-emerald-600 flex items-center gap-1 justify-center"><CheckCircle className="w-4 h-4" /> {isTr ? 'Pergel Kesişimi Başarılı!' : 'Intersecting Circles Done!'}</span>
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {currentStepState.circle2Completed ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? 'Pergel Kesişimi Başarılı!' : 'Intersecting Circles Done!'}</span>
+                  </span>
                 ) : (
                   <span>{isTr ? 'Silik kılavuza uyarak B noktasından 2. çemberi çiz' : 'Follow faint guide and drag from B'}</span>
                 )}
@@ -859,136 +1881,380 @@ export const KidsAdventureView: React.FC<KidsAdventureProps> = ({ onReturn }) =>
             </div>
           )}
 
-          {/* STEP 11: 3 Petals Rosette (With Clear Faint Target Guides) */}
+          {/* STEP 11: 3 Petals Rosette (Touch-Targeted Guide Points on Circle) */}
           {step === 11 && (
-            <div
-              className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative shadow-2xs cursor-pointer"
-              onClick={() => {
-                if (petals3Count < 3) {
-                  const newCount = petals3Count + 1;
-                  setPetals3Count(newCount);
-                  if (newCount === 3) {
-                    setStars(115);
-                    triggerConfetti();
+            <div className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative shadow-sm">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 400 400"
+                className="w-full h-full cursor-pointer"
+                onPointerDown={(e) => {
+                  const coords = getSvgCoordinates(e);
+                  // Find if clicked near any of the 3 guide points
+                  const found = petalGuidePoints3.find((p) => Math.hypot(coords.x - p.x, coords.y - p.y) <= 45);
+                  if (found) {
+                    if (!bloomedPetals3.includes(found.id)) {
+                      soundEffects.playLineSnap();
+                      const updated = [...bloomedPetals3, found.id];
+                      updateCurrentStepState((prev) => ({
+                        ...prev,
+                        bloomedPetals3: updated,
+                        petals3Count: updated.length,
+                      }));
+                      if (updated.length === 3) {
+                        setStars(115);
+                        triggerStepCompletionCelebration(11);
+                      }
+                    } else {
+                      soundEffects.playDot();
+                    }
                   }
-                }
-              }}
-            >
-              <svg viewBox="0 0 400 400" className="w-full h-full pointer-events-none">
+                }}
+              >
                 {/* Center Circle */}
-                <circle cx="200" cy="200" r="85" fill="none" stroke="#3A6B5C" strokeWidth="3" />
-                <circle cx="200" cy="200" r="5" fill="#334155" />
+                <circle cx="200" cy="200" r="85" fill="none" stroke="#3A6B5C" strokeWidth="3.5" />
+                <circle cx="200" cy="200" r="6" fill="#0F172A" />
 
-                {/* Low Opacity Faint Target Guides for 3 Petals */}
-                {[0, 120, 240].map((deg) => {
-                  const ang = (deg * Math.PI) / 180;
+                {/* 3 Faint Guide Circles */}
+                {petalGuidePoints3.map((pt) => (
+                  <circle
+                    key={`guide-${pt.id}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r="85"
+                    fill="none"
+                    stroke="#94A3B8"
+                    strokeWidth="2.5"
+                    strokeDasharray="5 5"
+                    opacity="0.6"
+                  />
+                ))}
+
+                {/* Bloomed Petal Circles (Only for bloomed ones) */}
+                {bloomedPetals3.map((petalId) => {
+                  const pt = petalGuidePoints3.find((p) => p.id === petalId);
+                  if (!pt) return null;
                   return (
                     <circle
-                      key={`guide-${deg}`}
-                      cx={200 + 85 * Math.cos(ang)}
-                      cy={200 + 85 * Math.sin(ang)}
+                      key={`bloomed-${petalId}`}
+                      cx={pt.x}
+                      cy={pt.y}
                       r="85"
-                      fill="none"
-                      stroke="#CBD5E1"
-                      strokeWidth="2"
-                      strokeDasharray="4 4"
+                      fill="rgba(212, 163, 115, 0.12)"
+                      stroke={activeColor}
+                      strokeWidth={strokeWidth}
                     />
                   );
                 })}
 
-                {/* Drawn Petal Circles */}
-                {[0, 120, 240].map((deg, idx) => {
-                  if (idx >= petals3Count) return null;
-                  const ang = (deg * Math.PI) / 180;
+                {/* Interactive Touch Target Badges at Guide Points */}
+                {petalGuidePoints3.map((pt) => {
+                  const isBloomed = bloomedPetals3.includes(pt.id);
                   return (
-                    <circle
-                      key={deg}
-                      cx={200 + 85 * Math.cos(ang)}
-                      cy={200 + 85 * Math.sin(ang)}
-                      r="85"
-                      fill="rgba(212, 163, 115, 0.08)"
-                      stroke={activeColor}
-                      strokeWidth="3.5"
-                    />
+                    <g key={`marker-${pt.id}`} className="transition-all duration-300">
+                      {/* Generous touch target */}
+                      <circle cx={pt.x} cy={pt.y} r="32" fill="transparent" />
+
+                      {/* Visible node */}
+                      {!isBloomed ? (
+                        <>
+                          <circle cx={pt.x} cy={pt.y} r="18" fill="#FEF3C7" stroke="#D97706" strokeWidth="2.5" />
+                          <circle
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="24"
+                            fill="none"
+                            stroke="#D97706"
+                            strokeWidth="2"
+                            strokeDasharray="3 3"
+                            className="animate-spin"
+                            style={{ transformOrigin: `${pt.x}px ${pt.y}px` }}
+                          />
+                          <text x={pt.x} y={pt.y + 5} textAnchor="middle" fill="#92400E" fontSize="12" fontWeight="bold">
+                            {pt.label}
+                          </text>
+                        </>
+                      ) : (
+                        <>
+                          <circle cx={pt.x} cy={pt.y} r="14" fill="#10B981" stroke="white" strokeWidth="2.5" />
+                          <text x={pt.x} y={pt.y + 4} textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">
+                            ✓
+                          </text>
+                        </>
+                      )}
+                    </g>
                   );
                 })}
               </svg>
-              <div className="absolute bottom-4 text-center pointer-events-none text-xs font-bold text-slate-500">
-                {petals3Count === 3 ? (
-                  <span className="text-emerald-600 flex items-center gap-1 justify-center"><CheckCircle className="w-4 h-4" /> {isTr ? 'Çiçek Yaprakları Açtı!' : '3 Petals Bloomed!'}</span>
+
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {bloomedPetals3.length === 3 ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? '3 Çiçek Yaprağı Açtı!' : '3 Petals Bloomed!'}</span>
+                  </span>
                 ) : (
-                  <span>{isTr ? `Ekrana dokunarak silik kılavuzdaki yaprakları ekle (${petals3Count}/3 yaprak)` : `Tap to add guided petals (${petals3Count}/3)`}</span>
+                  <span>
+                    {isTr
+                      ? `Çember üzerindeki kılavuz noktalara dokun (${bloomedPetals3.length}/3)`
+                      : `Tap the guide nodes on the circle (${bloomedPetals3.length}/3)`}
+                  </span>
                 )}
               </div>
             </div>
           )}
 
-          {/* STEP 12: Full 6 Petals Rosette (With Clear Faint Target Guides) */}
+          {/* STEP 12: Full 6 Petals Rosette (Touch-Targeted Guide Points) */}
           {step === 12 && (
-            <div
-              className="w-full max-w-[400px] aspect-square rounded-2xl bg-white border border-slate-200 flex flex-col items-center justify-center relative shadow-2xs cursor-pointer"
-              onClick={() => {
-                if (petals6Count < 6) {
-                  const newCount = petals6Count + 1;
-                  setPetals6Count(newCount);
-                  if (newCount === 6) {
-                    setStars(130);
-                    triggerConfetti();
+            <div className="w-full max-w-[480px] sm:max-w-[500px] aspect-square rounded-3xl bg-white border-2 border-slate-300 flex flex-col items-center justify-center relative shadow-sm">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 400 400"
+                className="w-full h-full cursor-pointer"
+                onPointerDown={(e) => {
+                  const coords = getSvgCoordinates(e);
+                  const found = petalGuidePoints6.find((p) => Math.hypot(coords.x - p.x, coords.y - p.y) <= 45);
+                  if (found) {
+                    if (!bloomedPetals6.includes(found.id)) {
+                      soundEffects.playLineSnap();
+                      const updated = [...bloomedPetals6, found.id];
+                      updateCurrentStepState((prev) => ({
+                        ...prev,
+                        bloomedPetals6: updated,
+                        petals6Count: updated.length,
+                      }));
+                      if (updated.length === 6) {
+                        setStars(130);
+                        triggerStepCompletionCelebration(12);
+                      }
+                    } else {
+                      soundEffects.playDot();
+                    }
                   }
-                }
-              }}
-            >
-              <svg viewBox="0 0 400 400" className="w-full h-full pointer-events-none">
+                }}
+              >
                 {/* Center Circle */}
-                <circle cx="200" cy="200" r="85" fill="none" stroke="#3A6B5C" strokeWidth="3" />
-                <circle cx="200" cy="200" r="5" fill="#334155" />
+                <circle cx="200" cy="200" r="85" fill="none" stroke="#3A6B5C" strokeWidth="3.5" />
+                <circle cx="200" cy="200" r="6" fill="#0F172A" />
 
-                {/* Low Opacity Faint Target Guides for 6 Petals */}
-                {[0, 60, 120, 180, 240, 300].map((deg) => {
-                  const ang = (deg * Math.PI) / 180;
+                {/* 6 Faint Guide Circles */}
+                {petalGuidePoints6.map((pt) => (
+                  <circle
+                    key={`guide6-${pt.id}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r="85"
+                    fill="none"
+                    stroke="#94A3B8"
+                    strokeWidth="2.5"
+                    strokeDasharray="5 5"
+                    opacity="0.6"
+                  />
+                ))}
+
+                {/* Bloomed Petal Circles */}
+                {bloomedPetals6.map((petalId) => {
+                  const pt = petalGuidePoints6.find((p) => p.id === petalId);
+                  if (!pt) return null;
                   return (
                     <circle
-                      key={`guide-${deg}`}
-                      cx={200 + 85 * Math.cos(ang)}
-                      cy={200 + 85 * Math.sin(ang)}
+                      key={`bloomed6-${petalId}`}
+                      cx={pt.x}
+                      cy={pt.y}
                       r="85"
-                      fill="none"
-                      stroke="#CBD5E1"
-                      strokeWidth="2"
-                      strokeDasharray="4 4"
+                      fill="rgba(8, 125, 134, 0.12)"
+                      stroke={activeColor}
+                      strokeWidth={strokeWidth}
                     />
                   );
                 })}
 
-                {/* Drawn Petal Circles */}
-                {[0, 60, 120, 180, 240, 300].map((deg, idx) => {
-                  if (idx >= petals6Count) return null;
-                  const ang = (deg * Math.PI) / 180;
+                {/* Interactive Touch Target Badges */}
+                {petalGuidePoints6.map((pt) => {
+                  const isBloomed = bloomedPetals6.includes(pt.id);
                   return (
-                    <circle
-                      key={deg}
-                      cx={200 + 85 * Math.cos(ang)}
-                      cy={200 + 85 * Math.sin(ang)}
-                      r="85"
-                      fill="rgba(8, 125, 134, 0.08)"
-                      stroke={activeColor}
-                      strokeWidth="3.5"
-                    />
+                    <g key={`marker6-${pt.id}`} className="transition-all duration-300">
+                      <circle cx={pt.x} cy={pt.y} r="32" fill="transparent" />
+
+                      {!isBloomed ? (
+                        <>
+                          <circle cx={pt.x} cy={pt.y} r="16" fill="#CCFBF1" stroke="#0D9488" strokeWidth="2.5" />
+                          <circle
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="22"
+                            fill="none"
+                            stroke="#0D9488"
+                            strokeWidth="2"
+                            strokeDasharray="3 3"
+                            className="animate-spin"
+                            style={{ transformOrigin: `${pt.x}px ${pt.y}px` }}
+                          />
+                          <text x={pt.x} y={pt.y + 5} textAnchor="middle" fill="#115E59" fontSize="12" fontWeight="bold">
+                            {pt.label}
+                          </text>
+                        </>
+                      ) : (
+                        <>
+                          <circle cx={pt.x} cy={pt.y} r="14" fill="#0D9488" stroke="white" strokeWidth="2.5" />
+                          <text x={pt.x} y={pt.y + 4} textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">
+                            ✓
+                          </text>
+                        </>
+                      )}
+                    </g>
                   );
                 })}
               </svg>
-              <div className="absolute bottom-4 text-center pointer-events-none text-xs font-bold text-slate-500">
-                {petals6Count === 6 ? (
-                  <span className="text-emerald-600 flex items-center gap-1 justify-center"><CheckCircle className="w-4 h-4" /> {isTr ? '6 Yapraklı Çiçek Tamamlandı!' : 'Full Rosette Flower Completed!'}</span>
+
+              <div className="absolute bottom-4 text-center pointer-events-none text-base font-bold text-slate-700">
+                {bloomedPetals6.length === 6 ? (
+                  <span className="text-emerald-700 flex items-center gap-1.5 justify-center">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span>{isTr ? '6 Yapraklı Çiçek Tamamlandı!' : 'Full Rosette Flower Completed!'}</span>
+                  </span>
                 ) : (
-                  <span>{isTr ? `Dokunarak silik kılavuzdaki 6 yaprağı açtır (${petals6Count}/6 yaprak)` : `Tap to bloom all guided petals (${petals6Count}/6)`}</span>
+                  <span>
+                    {isTr
+                      ? `Çember üzerindeki kılavuz noktalara dokun (${bloomedPetals6.length}/6)`
+                      : `Tap the guide nodes on the circle (${bloomedPetals6.length}/6)`}
+                  </span>
                 )}
               </div>
             </div>
           )}
 
+          {/* Automatic Stage Advance Celebration Overlay (3s Countdown + Direct Skip) */}
+          {celebrationCountdown !== null && (
+            <div
+              role="alert"
+              aria-live="polite"
+              className="absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in rounded-3xl"
+            >
+              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl border-4 border-amber-400 space-y-4">
+                <div className="text-5xl animate-bounce">🎉</div>
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                  {isTr ? 'Tebrikler!' : 'Congratulations!'}
+                </h3>
+                <p className="text-base text-slate-700 font-semibold">
+                  {isTr ? `${step}. Bölümü Başarıyla Tamamladın!` : `Stage ${step} Completed!`}
+                </p>
+
+                <div className="flex items-center justify-center gap-2 text-sm sm:text-base text-teal-900 font-extrabold bg-teal-50 py-2.5 px-4 rounded-xl border border-teal-200">
+                  <Sparkles className="w-4 h-4 text-amber-500 animate-spin" />
+                  <span>
+                    {isTr
+                      ? `Sonraki bölüme geçiliyor... (${celebrationCountdown}s)`
+                      : `Advancing to next stage... (${celebrationCountdown}s)`}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCelebrationCountdown(null);
+                      handleNext();
+                    }}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-md cursor-pointer min-h-[44px] transition"
+                  >
+                    <span>{isTr ? 'Hemen Geç' : 'Next Now'}</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCelebrationCountdown(null)}
+                    className="py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm cursor-pointer min-h-[44px] transition"
+                  >
+                    {isTr ? 'İncele' : 'Review'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Grand Victory Modal on Step 20 Final Completion */}
+          {step === 20 && isCurrentStepReadyToAdvance && (
+            <div
+              role="alert"
+              aria-live="polite"
+              className="absolute inset-0 z-40 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in rounded-3xl"
+            >
+              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl border-4 border-amber-400 space-y-4">
+                <div className="text-6xl animate-bounce">👑</div>
+                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
+                  {isTr ? 'Muhteşem! Geometri Ustası Oldun!' : 'Magnificent! Junior Geometer Champion!'}
+                </h3>
+                <p className="text-base text-slate-700 font-medium">
+                  {isTr
+                    ? 'Tüm 20 bölümü başarıyla tamamladın ve Selçuklu saray kapısı taç yıldızını ortaya çıkardın!'
+                    : 'You completed all 20 stages and mastered Islamic geometric patterns!'}
+                </p>
+                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-300 font-extrabold text-amber-900 text-lg">
+                  ⭐ {stars} Geometri Puanı
+                </div>
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleResetAllProgress}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-teal-800 hover:bg-teal-900 text-white font-extrabold text-sm sm:text-base cursor-pointer min-h-[44px]"
+                  >
+                    {isTr ? '1. Bölümden Tekrar Oyna' : 'Play Again'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsExitModalOpen(true)}
+                    className="py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm sm:text-base cursor-pointer min-h-[44px]"
+                  >
+                    {isTr ? 'Normal Mod' : 'Normal Mode'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Exit Confirmation Modal */}
+      <ExitConfirmModal
+        isOpen={isExitModalOpen}
+        currentStep={step}
+        onConfirmExit={handleConfirmExit}
+        onCancel={() => setIsExitModalOpen(false)}
+      />
+
+      {/* Onboarding Tour Builder */}
+      <KidsOnboardingTour
+        isOpen={isOnboardingTourOpen}
+        onClose={() => {
+          setIsOnboardingTourOpen(false);
+          kidsStorage.saveSession({ tourCompleted: true });
+        }}
+      />
+
+      {/* Theme Style Tweaker */}
+      <ThemeStyleTweaker
+        isOpen={isThemeTweakerOpen}
+        onClose={() => setIsThemeTweakerOpen(false)}
+        themeMode={themeMode}
+        onSelectTheme={(t) => setThemeMode(t)}
+        textSizeMode={textSizeMode}
+        onSelectTextSize={(s) => setTextSizeMode(s)}
+        strokeWidth={strokeWidth}
+        onSelectStrokeWidth={(w) => setStrokeWidth(w)}
+        sfxEnabled={sfxEnabled}
+        onToggleSfx={() => {
+          const next = !sfxEnabled;
+          setSfxEnabled(next);
+        }}
+        bgMusicEnabled={bgMusicEnabled}
+        onToggleBgMusic={() => {
+          const next = !bgMusicEnabled;
+          setBgMusicEnabled(next);
+        }}
+        onReopenTour={() => setIsOnboardingTourOpen(true)}
+        onResetAllProgress={handleResetAllProgress}
+      />
     </div>
   );
 };

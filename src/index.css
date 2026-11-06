@@ -13,15 +13,27 @@
     --border-main: #E8E5DD;
   }
 
+  html {
+    font-size: 16px; /* Strict 1rem = 16px minimum */
+  }
+
   body {
     background-color: var(--bg-main);
     color: var(--text-main);
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
     margin: 0;
     padding: 0;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* WCAG 2.2 focus visibility for keyboard and assistive technologies */
+  :focus-visible {
+    outline: 3px solid #087D86;
+    outline-offset: 2px;
   }
 }
 
